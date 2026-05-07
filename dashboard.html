@@ -4,36 +4,16 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>Fuso Energy System Dashboard</title>
-<!--`<link href="static/styles.css" rel="stylesheet"/>-->
-<link href="static/styles_new.css" rel="stylesheet"/>
-<style>
-  /* Wrapper to keep both header and tabs pinned to the top */
-  .sticky-nav-group {
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  }
+<!--`<link href="/static/styles.css" rel="stylesheet"/>-->
+<link href="/static/styles_new.css?v=2" rel="stylesheet"/>
 
-  header {
-    position: static; /* Let the container handle the stickiness */
-    background-color: #0c1829; /* A solid dark blue matching the theme */
-    background-image: none;    /* Removes any existing gradients */
-    border-bottom: 1px solid #1a3a5c; /* Adds a clear separation line */
-  }
-
-  #tab-bar {
-    background: var(--panel); /* Ensure tabs have a solid background when scrolling */
-    border-bottom: 2px solid var(--accent);
-  }
-</style>
 </head>
 <body>
 <div class="sticky-nav-group">
   <!-- ═══════════════════════════════ HEADER ══════════════════════════════ -->
   <header>
     <div class="logo">
-      <img class="logo-icon" src="static/image.png" alt="Fuso Energy Logo"/>
+      <img class="logo-icon" src="/static/image.png" alt="Fuso Energy Logo"/>
       <div class="logo-text">
         <h1>PowerGrid</h1>
         <span>FUSO· ENERGY MONITORING SYSTEM · v2.0</span>
@@ -147,6 +127,13 @@
       AWAITING DEVICE DATA
     </div>
   </div>
+
+  <div class="meter-modal" id="meter-modal" style="display:none" onclick="closeMeterModal(event)">
+    <div class="meter-modal-card" onclick="event.stopPropagation()">
+      <button class="meter-modal-close" onclick="closeMeterModal()" title="Close">×</button>
+      <div id="meter-modal-content"></div>
+    </div>
+  </div>
 </main>
 
 
@@ -162,15 +149,19 @@ const API_BASE = (location.protocol === 'file:')
   ? 'http://127.0.0.1:5000'   // opened as a local file — point at Flask
   : '';                         // served by Flask — same origin, no prefix needed
 
-const POLL_MS     = 3000;        // dashboard refresh interval (ms)
+const POLL_MS     = 3000;        // fallback poll interval if SSE is unavailable
 const SHIFT_POLL_MS = 300000;    // shift summary refresh (5 minutes)
-const LIVE_WINDOW = 15000;       // ms before device is "stale"
-const STALE_WIN   = 60000;       // ms before device is "offline"
+const LIVE_WINDOW = 6 * 60 * 1000;   // 6 min => LIVE
+const STALE_WIN   = 12 * 60 * 1000;  // 12 min => DELAYED, then OFFLINE
 
 /* ────────────────────────────────────────────────────────────────
    STATE
    ──────────────────────────────────────────────────────────────── */
 let activeId    = null;
+let allDevices  = [];
+let shiftNowState = { label: 'Current Shift', value: '-- kWh' };
+let liveSource = null;
+let fallbackPollTimer = null;
 
 /* ────────────────────────────────────────────────────────────────
    CLOCK
@@ -242,6 +233,7 @@ function renderPanel() {
     document.getElementById('panel-title').textContent = 'No Device Selected';
     document.getElementById('panel-meta').innerHTML = '';
     document.getElementById('stats-bar').innerHTML = '';
+    shiftNowState = { label: 'Current Shift', value: '-- kWh' };
     document.getElementById('meter-area').innerHTML =
       '<div class="empty-state">// SELECT A DEVICE //</div>';
     return;
@@ -259,13 +251,12 @@ function renderPanel() {
   const onlineCount  = meters.filter(m => m.status === 'OK').length;
   const offlineCount = meters.length - onlineCount;
   const totalKW  = meters.reduce((s, m) => s + (parseFloat(m.kw)  || 0), 0);
-  const totalKVA = meters.reduce((s, m) => s + (parseFloat(m.kva) || 0), 0);
-  const avgPF    = onlineCount
-    ? meters.filter(m => m.status === 'OK')
-            .reduce((s, m) => s + (parseFloat(m.pf) || 0), 0) / onlineCount
-    : 0;
 
   document.getElementById('stats-bar').innerHTML = `
+    <div class="stat-card shift-now-card">
+      <div class="stat-lbl" id="shift-now-label">Current Shift</div>
+      <div class="stat-val" id="shift-now-value">-- kWh</div>
+    </div>
     <div class="stat-card">
       <div class="stat-val">${meters.length}</div>
       <div class="stat-lbl">Total Meters</div>
@@ -282,15 +273,8 @@ function renderPanel() {
       <div class="stat-val">${totalKW.toFixed(2)}</div>
       <div class="stat-lbl">Total kW</div>
     </div>
-    <div class="stat-card">
-      <div class="stat-val">${totalKVA.toFixed(2)}</div>
-      <div class="stat-lbl">Total kVA</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-val">${avgPF.toFixed(3)}</div>
-      <div class="stat-lbl">Avg PF</div>
-    </div>
   `;
+  setShiftNowCard(shiftNowState.label, shiftNowState.value);
 
   /* ── Meter cards ── */
   if (!meters.length) {
@@ -301,11 +285,12 @@ function renderPanel() {
 
   document.getElementById('meter-area').innerHTML = `
     <div class="meter-grid">
-      ${meters.map(m => renderMeterCard(m)).join('')}
+      ${meters.map((m, idx) => renderMeterCard(m, idx)).join('')}
     </div>`;
+  bindMeterCardClicks(meters);
 }
 
-function renderMeterCard(m) {
+function renderMeterCard(m, idx) {
   const isOk = m.status === 'OK';
   const cls  = isOk ? 'ok' : 'off';
   const statusText = isOk ? '● ONLINE' : '✕ OFFLINE';
@@ -338,11 +323,47 @@ function renderMeterCard(m) {
   ` : `<div class="offline-msg">// NO DATA RECEIVED //</div>`;
 
   return `
-    <div class="meter-card ${cls}">
+    <div class="meter-card ${cls}" data-meter-index="${idx}" title="Click to view details">
       <div class="meter-id">METER · ${String(m.meter_id || m.id || '?').padStart(2, '0')}</div>
       <div class="meter-status">${statusText}</div>
       ${params}
     </div>`;
+}
+
+function bindMeterCardClicks(meters) {
+  document.querySelectorAll('.meter-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const idx = Number(card.dataset.meterIndex);
+      const meter = meters[idx];
+      if (meter) openMeterModal(meter);
+    });
+  });
+}
+
+function openMeterModal(m) {
+  const isOk = m.status === 'OK';
+  const statusText = isOk ? 'ONLINE' : 'OFFLINE';
+  const content = `
+    <div class="meter-modal-title">Meter ${String(m.meter_id || m.id || '?').padStart(2, '0')}</div>
+    <div class="meter-modal-sub ${isOk ? 'ok' : 'off'}">${statusText}</div>
+    <table class="meter-modal-table">
+      <tbody>
+        <tr><th>Frequency</th><td>${fmt(m.freq)} Hz</td></tr>
+        <tr><th>Voltage</th><td>${fmt(m.volt)} V</td></tr>
+        <tr><th>Current</th><td>${fmt(m.curr)} A</td></tr>
+        <tr><th>Power Factor</th><td>${fmt(m.pf, 3)}</td></tr>
+        <tr><th>Active Power</th><td>${fmt(m.kw)} kW</td></tr>
+        <tr><th>Apparent Power</th><td>${fmt(m.kva)} kVA</td></tr>
+      </tbody>
+    </table>
+  `;
+  document.getElementById('meter-modal-content').innerHTML = content;
+  document.getElementById('meter-modal').style.display = 'flex';
+}
+
+function closeMeterModal(e) {
+  if (e && e.target && e.target.closest('.meter-modal-card')) return;
+  document.getElementById('meter-modal').style.display = 'none';
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -352,19 +373,7 @@ async function fetchData() {
   try {
     const res  = await fetch(`${API_BASE}/api/summary`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    allDevices = await res.json();
-
-    if (!activeId && allDevices.length) {
-      activeId = allDevices[0].id;
-      // Initialize default dates and dropdowns immediately so the 
-      // shift summary has valid parameters to query from the start.
-      populateDlDropdowns();
-      // Fetch the initial shift summary for the first active device.
-      updateShiftSummary();
-    }
-
-    renderTabs();
-    renderPanel();
+    applySummaryData(await res.json());
   } catch (err) {
     console.error('Fetch error:', err);
     document.getElementById('meter-area').innerHTML =
@@ -372,6 +381,66 @@ async function fetchData() {
        <span style="font-size:.65rem;margin-top:8px;display:block">${err.message}</span>
        </div>`;
   }
+}
+
+function applySummaryData(devices) {
+  allDevices = devices || [];
+
+  if (!activeId && allDevices.length) {
+    activeId = allDevices[0].id;
+    // Initialize default dates and dropdowns immediately so the
+    // shift summary has valid parameters to query from the start.
+    populateDlDropdowns();
+    // Fetch the initial shift summary for the first active device.
+    updateShiftSummary();
+  }
+
+  // If selected tab device vanished, pick first available.
+  if (activeId && !allDevices.some(d => d.id === activeId)) {
+    activeId = allDevices.length ? allDevices[0].id : null;
+  }
+
+  renderTabs();
+  renderPanel();
+  // Keep shift totals in sync with incoming live updates.
+  updateShiftSummary();
+}
+
+function startFallbackPolling() {
+  if (fallbackPollTimer) return;
+  fallbackPollTimer = setInterval(fetchData, POLL_MS);
+}
+
+function stopFallbackPolling() {
+  if (!fallbackPollTimer) return;
+  clearInterval(fallbackPollTimer);
+  fallbackPollTimer = null;
+}
+
+function startLiveStream() {
+  if (!window.EventSource) {
+    fetchData();
+    startFallbackPolling();
+    return;
+  }
+
+  if (liveSource) liveSource.close();
+  liveSource = new EventSource(`${API_BASE}/api/stream`);
+
+  liveSource.onmessage = (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      stopFallbackPolling();
+      applySummaryData(data);
+    } catch (e) {
+      console.error('SSE parse error:', e);
+    }
+  };
+
+  liveSource.onerror = () => {
+    // Browser auto-retries SSE. Keep fallback polling active to avoid stale UI.
+    startFallbackPolling();
+  };
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -400,8 +469,7 @@ function updateThemeIcons(isLight) {
 /* ────────────────────────────────────────────────────────────────
    BOOT
    ──────────────────────────────────────────────────────────────── */
-fetchData();
-setInterval(fetchData, POLL_MS);
+startLiveStream();
 setInterval(updateShiftSummary, SHIFT_POLL_MS); // Auto-refresh shift data
 
 /* ────────────────────────────────────────────────────────────────
@@ -436,16 +504,10 @@ function populateDlDropdowns() {
   const week  = new Date(today);
   week.setDate(week.getDate() - 7);
 
-  // Use local date instead of UTC to avoid timezone mismatches
-  const toLocalISO = d => {
-    const z = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
-  };
-
   if (!document.getElementById('dl-from').value)
-    document.getElementById('dl-from').value = toLocalISO(week);
+    document.getElementById('dl-from').value = getLocalISODate(week);
   if (!document.getElementById('dl-to').value)
-    document.getElementById('dl-to').value   = toLocalISO(today);
+    document.getElementById('dl-to').value   = getLocalISODate(today);
 
   // Add event listeners for shift summary updates
   document.getElementById('dl-from').addEventListener('change', updateShiftSummary);
@@ -453,6 +515,32 @@ function populateDlDropdowns() {
 
   // Initial shift summary update
   updateShiftSummary();
+}
+
+function getCurrentShiftMeta() {
+  const now = new Date();
+  const hhmmss = now.toTimeString().slice(0, 8);
+  if (hhmmss >= '06:00:00' && hhmmss <= '13:59:59') {
+    return { key: 'A', label: 'Shift A (06:00-13:59)' };
+  }
+  if (hhmmss >= '14:00:00' && hhmmss <= '21:59:59') {
+    return { key: 'B', label: 'Shift B (14:00-21:59)' };
+  }
+  return { key: 'C', label: 'Shift C (22:00-05:59)' };
+}
+
+function getLocalISODate(date = new Date()) {
+  const z = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${z(date.getMonth() + 1)}-${z(date.getDate())}`;
+}
+
+function setShiftNowCard(label, value) {
+  shiftNowState = { label, value };
+  const labelEl = document.getElementById('shift-now-label');
+  const valueEl = document.getElementById('shift-now-value');
+  if (!labelEl || !valueEl) return;
+  labelEl.textContent = label;
+  valueEl.textContent = value;
 }
 
 async function updateShiftSummary() {
@@ -482,11 +570,26 @@ async function updateShiftSummary() {
       document.getElementById('shift-c').textContent = `${(summaries.C || 0).toFixed(2)} kWh`;
       const total = (summaries.A || 0) + (summaries.B || 0) + (summaries.C || 0);
       document.getElementById('shift-total').textContent = `${total.toFixed(2)} kWh`;
+
+      // Show running shift + present shift total for today.
+      const currentShift = getCurrentShiftMeta();
+      const today = getLocalISODate();
+      let currentUrl = `${API_BASE}/api/shift-summary?date_from=${today}&date_to=${today}&shift=${currentShift.key}`;
+      if (deviceId) currentUrl += `&device_id=${deviceId}`;
+      const currentRes = await fetch(currentUrl);
+      if (currentRes.ok) {
+        const currentData = await currentRes.json();
+        const presentShiftKwh = Number(currentData[currentShift.key] || 0).toFixed(2);
+        setShiftNowCard(currentShift.label, `${presentShiftKwh} kWh`);
+      } else {
+        setShiftNowCard(currentShift.label, 'N/A');
+      }
     } else {
       document.getElementById('shift-a').textContent = 'N/A';
       document.getElementById('shift-b').textContent = 'N/A';
       document.getElementById('shift-c').textContent = 'N/A';
       document.getElementById('shift-total').textContent = 'N/A';
+      setShiftNowCard('Current Shift', 'N/A');
     }
   } catch (err) {
     console.error('Shift summary error:', err);
@@ -494,6 +597,7 @@ async function updateShiftSummary() {
     document.getElementById('shift-b').textContent = 'Error';
     document.getElementById('shift-c').textContent = 'Error';
     document.getElementById('shift-total').textContent = 'Error';
+    setShiftNowCard('Current Shift', 'Error');
   }
 }
 

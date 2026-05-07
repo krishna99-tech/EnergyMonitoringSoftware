@@ -20,7 +20,7 @@ import threading
 # ── CONFIG ────────────────────────────────────────────────────────
 SERVER_IP   = "127.0.0.1"   # Change to your Flask server IP if remote
 SERVER_PORT = 6503
-INTERVAL    = 2              # seconds between each device transmission
+INTERVAL    = 50              # seconds between each device transmission
 NUM_METERS  = 18
 # ──────────────────────────────────────────────────────────────────
 

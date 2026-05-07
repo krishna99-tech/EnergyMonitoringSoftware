@@ -10,7 +10,7 @@ Open:
     http://<server-ip>:5000
 """
 
-from flask import Flask, jsonify, send_from_directory, request, Response
+from flask import Flask, jsonify, send_from_directory, request, Response, stream_with_context
 import socket, json, threading, time, sqlite3, os, csv, io, datetime
 
 # ── Resolve paths relative to THIS file, not the CWD ──────────────
@@ -45,6 +45,7 @@ def init_db():
             curr        REAL,
             pf          REAL,
             kw          REAL,
+            kwh_total   REAL,
             kva         REAL,
             recorded_at TEXT NOT NULL
         );
@@ -64,6 +65,15 @@ def init_db():
             AND h.meter_id    = latest.meter_id
             AND h.recorded_at = latest.max_ts;
     """)
+
+    # Backward-compatible migration:
+    # - add `kwh_total` to older databases
+    # - seed it from legacy `kw` values so shift math keeps working
+    cols = [r[1] for r in cur.execute("PRAGMA table_info(meter_history)").fetchall()]
+    if "kwh_total" not in cols:
+        cur.execute("ALTER TABLE meter_history ADD COLUMN kwh_total REAL")
+        cur.execute("UPDATE meter_history SET kwh_total = kw WHERE kwh_total IS NULL")
+
     con.commit()
     con.close()
     print(f"[DB] Using database: {DB_PATH}")
@@ -98,8 +108,8 @@ def insert_meters(device_id: int, meters: list):
     for m in meters:
         con.execute("""
             INSERT INTO meter_history(
-                device_id, meter_id, status, freq, volt, curr, pf, kw, kva, recorded_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                device_id, meter_id, status, freq, volt, curr, pf, kw, kwh_total, kva, recorded_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
         """, (
             device_id,
             m.get("id"),
@@ -109,6 +119,7 @@ def insert_meters(device_id: int, meters: list):
             m.get("curr"),
             m.get("pf"),
             m.get("kw"),
+            m.get("kwh_total", m.get("kw")),
             m.get("kva"),
             now
         ))
@@ -125,7 +136,11 @@ def calculate_shift_summaries(con, date_from, date_to, selected_shift=None, devi
     start_dt = (datetime.datetime.strptime(date_from, "%Y-%m-%d") - datetime.timedelta(days=1)).strftime("%Y-%m-%d 23:00:00")
     end_dt = f"{date_to} 23:59:59"
 
-    query = "SELECT device_id, meter_id, kw, recorded_at FROM meter_history WHERE recorded_at BETWEEN ? AND ?"
+    query = """
+        SELECT device_id, meter_id, COALESCE(kwh_total, kw) AS energy_total, recorded_at
+        FROM meter_history
+        WHERE recorded_at BETWEEN ? AND ?
+    """
     params = [start_dt, end_dt]
     if device_id:
         query += " AND device_id = ?"
@@ -134,12 +149,12 @@ def calculate_shift_summaries(con, date_from, date_to, selected_shift=None, devi
 
     rows = con.execute(query, params).fetchall()
 
-    consumption = {'A': 0.0, 'B': 0.0, 'C': 0.0}
-    prev_kw = {}
+    shift_consumption_kwh = {'A': 0.0, 'B': 0.0, 'C': 0.0}
+    prev_energy_reading = {}
 
     for row in rows:
         key = (row['device_id'], row['meter_id'])
-        curr_kw = row['kw']
+        current_energy_reading = row['energy_total']
         curr_ts = row['recorded_at']
         curr_date, curr_time = curr_ts.split(' ')
 
@@ -152,25 +167,25 @@ def calculate_shift_summaries(con, date_from, date_to, selected_shift=None, devi
             s_key = 'C'
 
         # 3. Accumulate Delta if reading is within the requested calendar dates
-        if key in prev_kw and prev_kw[key] is not None and curr_kw is not None:
-            if curr_kw >= prev_kw[key]:
+        if key in prev_energy_reading and prev_energy_reading[key] is not None and current_energy_reading is not None:
+            if current_energy_reading >= prev_energy_reading[key]:
                 # Normal operation: meter is incrementing
-                delta = curr_kw - prev_kw[key]
+                delta_kwh = current_energy_reading - prev_energy_reading[key]
             else:
                 # Rollover or Manual Reset detected (curr < prev)
                 # We treat the current value as the consumption since the reset
-                delta = curr_kw
+                delta_kwh = current_energy_reading
 
-            if delta > 0 and date_from <= curr_date <= date_to:
-                consumption[s_key] += delta
+            if delta_kwh > 0 and date_from <= curr_date <= date_to:
+                shift_consumption_kwh[s_key] += delta_kwh
 
-        prev_kw[key] = curr_kw
+        prev_energy_reading[key] = current_energy_reading
 
     # Prepare result: return only the selected shift or all three
-    if selected_shift and selected_shift in consumption:
-        result = {selected_shift: round(consumption[selected_shift], 2)}
+    if selected_shift and selected_shift in shift_consumption_kwh:
+        result = {selected_shift: round(shift_consumption_kwh[selected_shift], 2)}
     else:
-        result = {k: round(v, 2) for k, v in consumption.items()}
+        result = {k: round(v, 2) for k, v in shift_consumption_kwh.items()}
 
     result['Total'] = round(sum(v for k, v in result.items() if k in ('A', 'B', 'C')), 2)
     return result
@@ -179,6 +194,24 @@ def calculate_shift_summaries(con, date_from, date_to, selected_shift=None, devi
 # ─────────────────────────────────────────────────────────────────
 # UDP LISTENER
 # ─────────────────────────────────────────────────────────────────
+
+def build_summary_rows(con):
+    devices = con.execute("SELECT * FROM devices ORDER BY name").fetchall()
+    result  = []
+    for d in devices:
+        meters = con.execute(
+            "SELECT * FROM v_meters_latest WHERE device_id=? ORDER BY meter_id",
+            (d["id"],)
+        ).fetchall()
+        # Instantaneous active power sum across latest meter rows (kW), not kWh.
+        total_active_power_kw = round(sum((m["kw"] or 0) for m in meters), 2)
+        result.append({
+            **dict(d),
+            "meters": [dict(m) for m in meters],
+            "total_kw": total_active_power_kw
+        })
+    return result
+
 
 def udp_listener():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -235,21 +268,43 @@ def api_shift_summary():
 def api_summary():
     """Latest snapshot — polled by the dashboard every 3 s."""
     con = get_db()
-    devices = con.execute("SELECT * FROM devices ORDER BY name").fetchall()
-    result  = []
-    for d in devices:
-        meters = con.execute(
-            "SELECT * FROM v_meters_latest WHERE device_id=? ORDER BY meter_id",
-            (d["id"],)
-        ).fetchall()
-        total_kw = round(sum((m["kw"] or 0) for m in meters), 2)
-        result.append({
-            **dict(d),
-            "meters": [dict(m) for m in meters],
-            "total_kw": total_kw
-        })
+    result = build_summary_rows(con)
     con.close()
     return jsonify(result)
+
+
+@app.route("/api/stream")
+def api_stream():
+    """Server-Sent Events stream for live dashboard updates."""
+    def event_stream():
+        last_payload = None
+        while True:
+            try:
+                con = get_db()
+                rows = build_summary_rows(con)
+                con.close()
+
+                payload = json.dumps(rows, separators=(",", ":"))
+                if payload != last_payload:
+                    yield f"data: {payload}\n\n"
+                    last_payload = payload
+                else:
+                    # Keep-alive comment so proxies/clients don't time out idle connections.
+                    yield ": keepalive\n\n"
+            except Exception as e:
+                err = json.dumps({"error": str(e)})
+                yield f"event: error\ndata: {err}\n\n"
+            time.sleep(1)
+
+    return Response(
+        stream_with_context(event_stream()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.route("/api/download")
