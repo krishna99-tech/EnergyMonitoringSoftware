@@ -350,6 +350,14 @@ main { padding: 28px 32px; }
   margin-top: 3px;
 }
 
+.stat-sub {
+  margin-top: 4px;
+  font-size: .58rem;
+  letter-spacing: 1px;
+  color: var(--dim);
+  font-family: var(--font-mono);
+}
+
 .shift-now-card {
   min-width: 280px;
   text-align: left;
@@ -415,8 +423,8 @@ main { padding: 28px 32px; }
 }
 
 .meter-modal-card {
-  width: min(520px, calc(100vw - 32px));
-  aspect-ratio: 1 / 1;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   background: linear-gradient(145deg, rgba(0, 212, 255, 0.16) 0%, rgba(255, 107, 53, 0.16) 100%), var(--panel-grad);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -467,17 +475,18 @@ main { padding: 28px 32px; }
 .meter-modal-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 8px;
+  margin-top: 10px;
   font-family: var(--font-mono);
-  font-size: .9rem;
+  font-size: .95rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+  background: rgba(8, 24, 40, 0.38);
 }
 
 .meter-modal-table th,
 .meter-modal-table td {
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid rgba(26,58,92,.45);
 }
 
@@ -487,27 +496,30 @@ main { padding: 28px 32px; }
 }
 
 .meter-modal-table th {
-  width: 52%;
+  width: 58%;
   text-align: left;
-  color: var(--accent);
+  color: #0a6cff;
   letter-spacing: 1px;
-  background: rgba(0, 212, 255, 0.08);
+  background: rgba(0, 123, 255, 0.14);
 }
 
 .meter-modal-table td {
   text-align: right;
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.03);
+  color: #1f2a3a;
+  background: rgba(255, 255, 255, 0.88);
+  font-weight: 800;
 }
 
 body.light-theme .meter-modal-card {
   background: linear-gradient(145deg, rgba(13, 110, 253, 0.12) 0%, rgba(32, 201, 151, 0.12) 100%), #ffffff;
 }
 body.light-theme .meter-modal-table th {
-  background: rgba(13, 110, 253, 0.08);
+  background: rgba(13, 110, 253, 0.16);
+  color: #0a58ca;
 }
 body.light-theme .meter-modal-table td {
-  background: rgba(255, 255, 255, 0.8);
+  background: #ffffff;
+  color: #1a2433;
 }
 
 .meter-id {
@@ -783,6 +795,14 @@ body.light-theme .meter-modal-table td {
   font-weight: 700;
   color: var(--accent);
   margin-bottom: 12px;
+}
+
+.shift-scope {
+  font-family: var(--font-mono);
+  font-size: .64rem;
+  letter-spacing: 1px;
+  color: var(--dim);
+  margin: -4px 0 10px;
 }
 
 .shift-now {

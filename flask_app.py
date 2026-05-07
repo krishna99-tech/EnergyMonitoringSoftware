@@ -423,13 +423,13 @@ def ping():
 # ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # Default entrypoint switched to FastAPI.
+    # Run `python app.py` to start FastAPI app from app_fastapi.py.
+    import uvicorn
+
     print(f"[APP] Base directory : {BASE_DIR}")
     print(f"[APP] Dashboard HTML : {os.path.join(BASE_DIR, 'dashboard.html')}")
+    print("[APP] Default server: FastAPI (app_fastapi.py)")
+    print("[APP] Starting on http://0.0.0.0:5000")
 
-    init_db()
-
-    t = threading.Thread(target=udp_listener, daemon=True)
-    t.start()
-
-    print("[APP] Flask starting on http://0.0.0.0:5000")
-    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+    uvicorn.run("app_fastapi:app", host="0.0.0.0", port=5000, reload=False)
