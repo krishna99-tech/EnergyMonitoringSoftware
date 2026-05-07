@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Socket Chat</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+/* Container */
+.container {
+    width: 420px;
+    background: #1e293b;
+    padding: 20px;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+}
+
+/* Title */
+h2 {
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+/* Inputs */
+input {
+    width: 65%;
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    outline: none;
+    background: #020617;
+    color: white;
+}
+
+/* Buttons */
+button {
+    padding: 10px 12px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #3b82f6;
+    color: white;
+    transition: 0.3s;
+}
+
+button:disabled {
+    background: #475569;
+    cursor: not-allowed;
+}
+
+button:hover:not(:disabled) {
+    background: #2563eb;
+    transform: scale(1.05);
+}
+
+/* Row */
+.row {
+    display: flex;
+    justify-content: space-between;
+    gap: 5px;
+    margin-bottom: 10px;
+}
+
+/* Chat */
+#chat {
+    height: 260px;
+    overflow-y: auto;
+    background: #020617;
+    padding: 10px;
+    border-radius: 10px;
+    list-style: none;
+    margin-top: 10px;
+}
+
+/* Messages */
+.msg {
+    max-width: 75%;
+    padding: 8px;
+    margin-bottom: 6px;
+    border-radius: 10px;
+    font-size: 14px;
+    position: relative;
+}
+
+/* Left (others) */
+.left {
+    background: #334155;
+    align-self: flex-start;
+}
+
+/* Right (you) */
+.right {
+    background: #2563eb;
+    align-self: flex-end;
+    text-align: right;
+}
+
+/* Private */
+.private {
+    background: #9333ea !important;
+}
+
+/* System */
+.system {
+    background: #16a34a !important;
+    text-align: center;
+}
+
+/* Timestamp */
+.time {
+    font-size: 10px;
+    opacity: 0.7;
+    display: block;
+    margin-top: 3px;
+}
+
+/* Flex chat */
+#chat {
+    display: flex;
+    flex-direction: column;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <h2>💬 Chat Dashboard</h2>
+
+    <div class="row">
+        <input id="username" placeholder="Enter username">
+        <button onclick="register()">Join</button>
+    </div>
+
+    <div class="row">
+        <input id="msg" placeholder="Type message" disabled>
+        <button id="sendBtn" onclick="sendBroadcast()" disabled>Send</button>
+    </div>
+
+    <div class="row">
+        <input id="to" placeholder="Private to (username)" disabled>
+        <button id="privateBtn" onclick="sendPrivate()" disabled>Private</button>
+    </div>
+
+    <div id="chat"></div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+<script>
+const socket = io({ transports: ["polling"] });
+
+let currentUser = null;
+
+// Enable UI after join
+function enableChat() {
+    document.getElementById("msg").disabled = false;
+    document.getElementById("to").disabled = false;
+    document.getElementById("sendBtn").disabled = false;
+    document.getElementById("privateBtn").disabled = false;
+}
+
+// Register
+function register() {
+    const username = document.getElementById("username").value;
+    if (!username) return alert("Enter username");
+
+    currentUser = username;
+    socket.emit("register", {username});
+    enableChat();
+}
+
+// Broadcast
+function sendBroadcast() {
+    const message = document.getElementById("msg").value;
+    if (!message) return;
+
+    socket.emit("broadcast", {message});
+    document.getElementById("msg").value = "";
+}
+
+// Private
+function sendPrivate() {
+    const to = document.getElementById("to").value;
+    const message = document.getElementById("msg").value;
+
+    if (!to || !message) return;
+
+    socket.emit("private_message", {to, message});
+    document.getElementById("msg").value = "";
+}
+
+// Enter key send
+document.getElementById("msg").addEventListener("keypress", function(e) {
+    if (e.key === "Enter") sendBroadcast();
+});
+
+// Receive message
+socket.on("message", function(data) {
+    const chat = document.getElementById("chat");
+
+    const msgDiv = document.createElement("div");
+    msgDiv.classList.add("msg");
+
+    // Timestamp
+    const time = new Date().toLocaleTimeString();
+
+    msgDiv.innerHTML = `
+        ${data}
+        <span class="time">${time}</span>
+    `;
+
+    // Style logic
+    if (data.includes("Private")) {
+        msgDiv.classList.add("private");
+    } else if (data.includes("joined") || data.includes("left")) {
+        msgDiv.classList.add("system");
+    } else if (currentUser && data.startsWith(currentUser)) {
+        msgDiv.classList.add("right");
+    } else {
+        msgDiv.classList.add("left");
+    }
+
+    chat.appendChild(msgDiv);
+
+    // Auto scroll
+    chat.scrollTop = chat.scrollHeight;
+});
+</script>
+
+</body>
+</html>
