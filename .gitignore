@@ -3,3 +3,15 @@
 *.pyc
 ./gitignore
 /__pycache__/app.cpython-313.pyc
+/assests
+/ethernet_checking
+/ethernet_checking/__pycache__
+/ethernet_checking/__pycache__/ethernet_checking.cpython-313.pyc
+/ethernet_checking/__pycache__/main.cpython-313.pyc
+/run
+/sample_working_codes
+/socket
+/templates
+/main.ino
+/start_fastapi.bat
+/stop_fastapi.bat

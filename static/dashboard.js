@@ -113,7 +113,6 @@ function renderPanel() {
   /* ── Stats bar ── */
   const onlineCount  = meters.filter(m => m.status === 'OK').length;
   const offlineCount = meters.length - onlineCount;
-  const totalKW  = meters.reduce((s, m) => s + (parseFloat(m.kw)  || 0), 0);
 
   document.getElementById('stats-bar').innerHTML = `
     <div class="stat-card shift-now-card">
@@ -131,11 +130,6 @@ function renderPanel() {
     <div class="stat-card">
       <div class="stat-val" style="color:var(--offline)">${offlineCount}</div>
       <div class="stat-lbl">Offline</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-val">${totalKW.toFixed(2)}</div>
-      <div class="stat-lbl">Total kW</div>
-      <div class="stat-sub">from ${onlineCount} online meters</div>
     </div>
   `;
   setShiftNowCard(shiftNowState.label, shiftNowState.value);
