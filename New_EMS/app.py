@@ -3,7 +3,7 @@ import socket
 import threading
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -31,9 +31,56 @@ def init_db():
         kw REAL,
         kva REAL,
         kwh REAL,
+        line_voltage REAL,
+        line_to_line_voltage REAL,
+        avg_voltage REAL,
+        voltage_unbalance REAL,
+        line_current REAL,
+        current_l1 REAL,
+        current_l2 REAL,
+        current_l3 REAL,
+        avg_current REAL,
+        neutral_line_current REAL,
+        kw_l1 REAL,
+        kw_l2 REAL,
+        kw_l3 REAL,
+        kw_total REAL,
+        kva_l1 REAL,
+        kva_l2 REAL,
+        kva_l3 REAL,
+        kva_total REAL,
+        kva_max_demand REAL,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """)
+
+    # Backward-compatible migration for existing databases.
+    cur.execute("PRAGMA table_info(meter_data)")
+    existing_columns = {row[1] for row in cur.fetchall()}
+    required_columns = [
+        ("line_voltage", "REAL"),
+        ("line_to_line_voltage", "REAL"),
+        ("avg_voltage", "REAL"),
+        ("voltage_unbalance", "REAL"),
+        ("line_current", "REAL"),
+        ("current_l1", "REAL"),
+        ("current_l2", "REAL"),
+        ("current_l3", "REAL"),
+        ("avg_current", "REAL"),
+        ("neutral_line_current", "REAL"),
+        ("kw_l1", "REAL"),
+        ("kw_l2", "REAL"),
+        ("kw_l3", "REAL"),
+        ("kw_total", "REAL"),
+        ("kva_l1", "REAL"),
+        ("kva_l2", "REAL"),
+        ("kva_l3", "REAL"),
+        ("kva_total", "REAL"),
+        ("kva_max_demand", "REAL"),
+    ]
+    for col_name, col_type in required_columns:
+        if col_name not in existing_columns:
+            cur.execute(f"ALTER TABLE meter_data ADD COLUMN {col_name} {col_type}")
 
     conn.commit()
     conn.close()
@@ -48,7 +95,7 @@ with open("meter_map.json", "r") as f:
 # ================= UDP SERVER =================
 
 UDP_IP = "0.0.0.0"
-UDP_PORT = 6503
+UDP_PORT = 6504
 
 def udp_server():
 
@@ -94,9 +141,29 @@ def udp_server():
                     pf,
                     kw,
                     kva,
-                    kwh
+                    kwh,
+                    line_voltage,
+                    line_to_line_voltage,
+                    avg_voltage,
+                    voltage_unbalance,
+                    line_current,
+                    current_l1,
+                    current_l2,
+                    current_l3,
+                    avg_current,
+                    neutral_line_current,
+                    kw_l1,
+                    kw_l2,
+                    kw_l3,
+                    kw_total,
+                    kva_l1,
+                    kva_l2,
+                    kva_l3,
+                    kva_total,
+                    kva_max_demand,
+                    timestamp
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
 
                     plant,
@@ -111,7 +178,27 @@ def udp_server():
                     meter.get("pf"),
                     meter.get("kw"),
                     meter.get("kva"),
-                    meter.get("kwh")
+                    meter.get("kwh"),
+                    meter.get("line_voltage"),
+                    meter.get("line_to_line_voltage"),
+                    meter.get("avg_voltage"),
+                    meter.get("voltage_unbalance"),
+                    meter.get("line_current"),
+                    meter.get("current_l1"),
+                    meter.get("current_l2"),
+                    meter.get("current_l3"),
+                    meter.get("avg_current"),
+                    meter.get("neutral_line_current"),
+                    meter.get("kw_l1"),
+                    meter.get("kw_l2"),
+                    meter.get("kw_l3"),
+                    meter.get("kw_total"),
+                    meter.get("kva_l1"),
+                    meter.get("kva_l2"),
+                    meter.get("kva_l3"),
+                    meter.get("kva_total"),
+                    meter.get("kva_max_demand"),
+                    meter.get("timestamp") or payload.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ))
 
             conn.commit()
@@ -146,7 +233,8 @@ def meters():
 
         result.append({
             "id": meter_id,
-            "name": data["name"]
+            "name": data["name"],
+            "type": data.get("type", "submeter")
         })
 
     return jsonify(result)
@@ -186,6 +274,240 @@ def latest():
     conn.close()
 
     return jsonify([dict(r) for r in rows])
+
+
+def get_shift_name(dt):
+    hour = dt.hour
+    if 6 <= hour < 14:
+        return "Shift A (06:00-14:00)"
+    if 14 <= hour < 22:
+        return "Shift B (14:00-22:00)"
+    return "Shift C (22:00-06:00)"
+
+
+def get_shift_start(dt):
+    day = dt.date()
+    hour = dt.hour
+    if 6 <= hour < 14:
+        return datetime.combine(day, datetime.min.time()).replace(hour=6)
+    if 14 <= hour < 22:
+        return datetime.combine(day, datetime.min.time()).replace(hour=14)
+    if hour >= 22:
+        return datetime.combine(day, datetime.min.time()).replace(hour=22)
+    return datetime.combine(day - timedelta(days=1), datetime.min.time()).replace(hour=22)
+
+
+def get_shift_windows(start_dt, end_dt):
+    windows = []
+    cursor = get_shift_start(start_dt)
+    while cursor < end_dt:
+        next_cursor = cursor + timedelta(hours=8)
+        if next_cursor > start_dt and cursor < end_dt:
+            windows.append((cursor, next_cursor, get_shift_name(cursor)))
+        cursor = next_cursor
+    return windows
+
+
+def fetch_latest_kwh_at_or_before(cur, plant, meter_id, dt):
+    cur.execute(
+        """
+        SELECT kwh, timestamp
+        FROM meter_data
+        WHERE plant=? AND meter_id=? AND timestamp <= ?
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """,
+        [plant, meter_id, dt.strftime("%Y-%m-%d %H:%M:%S")]
+    )
+    return cur.fetchone()
+
+
+def fetch_kwh_bounds_in_window(cur, plant, meter_id, start_dt, end_dt):
+    cur.execute(
+        """
+        SELECT kwh, timestamp
+        FROM meter_data
+        WHERE plant=? AND meter_id=? AND timestamp >= ? AND timestamp <= ?
+        ORDER BY timestamp ASC
+        LIMIT 1
+        """,
+        [plant, meter_id, start_dt.strftime("%Y-%m-%d %H:%M:%S"), end_dt.strftime("%Y-%m-%d %H:%M:%S")]
+    )
+    first_row = cur.fetchone()
+
+    cur.execute(
+        """
+        SELECT kwh, timestamp
+        FROM meter_data
+        WHERE plant=? AND meter_id=? AND timestamp >= ? AND timestamp <= ?
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """,
+        [plant, meter_id, start_dt.strftime("%Y-%m-%d %H:%M:%S"), end_dt.strftime("%Y-%m-%d %H:%M:%S")]
+    )
+    last_row = cur.fetchone()
+    return first_row, last_row
+
+
+@app.route("/energy_summary")
+def energy_summary():
+    plant = request.args.get("plant")
+    meter = request.args.get("meter")
+    mode = request.args.get("mode", "shiftwise")
+    selected_shift = request.args.get("shift", "all")
+    from_dt_raw = request.args.get("from_dt")
+    to_dt_raw = request.args.get("to_dt")
+
+    if not plant or not meter:
+        return jsonify({"error": "plant and meter are required"}), 400
+
+    now = datetime.now()
+    if from_dt_raw and to_dt_raw:
+        try:
+            from_dt = datetime.fromisoformat(from_dt_raw)
+            to_dt = datetime.fromisoformat(to_dt_raw)
+        except ValueError:
+            return jsonify({"error": "Invalid datetime format"}), 400
+    else:
+        yesterday = now.date() - timedelta(days=1)
+        from_dt = datetime.combine(yesterday, datetime.min.time())
+        to_dt = datetime.combine(yesterday, datetime.max.time())
+
+    if to_dt <= from_dt:
+        return jsonify({"error": "to_dt must be greater than from_dt"}), 400
+
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    meters = meter_map.get(plant, {})
+    meter_config = meters.get(str(meter), {})
+    if not meter_config:
+        conn.close()
+        return jsonify({"error": "Meter not found"}), 404
+
+    if meter_config.get("type") == "incomer":
+        conn.close()
+        return jsonify({"error": "Energy summary is only for submeters"}), 400
+
+    start_row = fetch_latest_kwh_at_or_before(cur, plant, int(meter), from_dt)
+    end_row = fetch_latest_kwh_at_or_before(cur, plant, int(meter), to_dt)
+
+    start_kwh = start_row["kwh"] if start_row else None
+    end_kwh = end_row["kwh"] if end_row else None
+    total_consumption = None
+    if start_kwh is not None and end_kwh is not None:
+        total_consumption = round(max(0, end_kwh - start_kwh), 2)
+
+    shift_start = get_shift_start(now)
+    shift_end = shift_start + timedelta(hours=8)
+    shift_start_row = fetch_latest_kwh_at_or_before(cur, plant, int(meter), shift_start)
+    shift_now_row = fetch_latest_kwh_at_or_before(cur, plant, int(meter), now)
+
+    current_shift_start_kwh = shift_start_row["kwh"] if shift_start_row else None
+    current_shift_end_kwh = shift_now_row["kwh"] if shift_now_row else None
+    current_shift_consumption = None
+    if current_shift_start_kwh is not None and current_shift_end_kwh is not None:
+        current_shift_consumption = round(max(0, current_shift_end_kwh - current_shift_start_kwh), 2)
+
+    bars = []
+    if mode == "totalshifts":
+        windows = get_shift_windows(from_dt, to_dt)
+        for idx, (window_start, window_end, shift_name) in enumerate(windows, start=1):
+            w_start_row, w_end_row = fetch_kwh_bounds_in_window(cur, plant, int(meter), window_start, window_end)
+            if not w_start_row or not w_end_row:
+                continue
+            cons = round(max(0, w_end_row["kwh"] - w_start_row["kwh"]), 2)
+            bars.append({
+                "label": f"Shift {idx}",
+                "shift_name": shift_name,
+                "start": window_start.strftime("%Y-%m-%d %H:%M:%S"),
+                "end": window_end.strftime("%Y-%m-%d %H:%M:%S"),
+                "start_kwh": round(w_start_row["kwh"], 2),
+                "end_kwh": round(w_end_row["kwh"], 2),
+                "consumption": cons
+            })
+    else:
+        windows = get_shift_windows(from_dt, to_dt)
+        if selected_shift != "all":
+            day_buckets = {}
+            for window_start, window_end, shift_name in windows:
+                if not shift_name.startswith(selected_shift):
+                    continue
+                w_start_row, w_end_row = fetch_kwh_bounds_in_window(cur, plant, int(meter), window_start, window_end)
+                if not w_start_row or not w_end_row:
+                    continue
+                cons = round(max(0, w_end_row["kwh"] - w_start_row["kwh"]), 2)
+                day_key = window_start.strftime("%Y-%m-%d")
+                day_buckets[day_key] = day_buckets.get(day_key, 0) + cons
+            for day_key in sorted(day_buckets.keys()):
+                bars.append({
+                    "label": day_key,
+                    "shift_name": selected_shift,
+                    "start": f"{day_key} 00:00:00",
+                    "end": f"{day_key} 23:59:59",
+                    "start_kwh": None,
+                    "end_kwh": None,
+                    "consumption": round(day_buckets[day_key], 2)
+                })
+        else:
+            # All Shifts => full-day total per date (sum of A+B+C for each day)
+            day_buckets = {}
+            for window_start, window_end, _shift_name in windows:
+                w_start_row, w_end_row = fetch_kwh_bounds_in_window(cur, plant, int(meter), window_start, window_end)
+                if not w_start_row or not w_end_row:
+                    continue
+                cons = round(max(0, w_end_row["kwh"] - w_start_row["kwh"]), 2)
+                day_key = window_start.strftime("%Y-%m-%d")
+                day_buckets[day_key] = day_buckets.get(day_key, 0) + cons
+
+            for day_key in sorted(day_buckets.keys()):
+                bars.append({
+                    "label": day_key,
+                    "shift_name": "All Shifts",
+                    "start": f"{day_key} 00:00:00",
+                    "end": f"{day_key} 23:59:59",
+                    "start_kwh": None,
+                    "end_kwh": None,
+                    "consumption": round(day_buckets[day_key], 2)
+                })
+
+    selected_total_kwh = round(sum((b.get("consumption") or 0) for b in bars), 2)
+    # Shift-filtered card values: for specific shift, show aggregated start/end for that shift;
+    # for All Shifts, keep range boundary values.
+    selected_start_kwh = start_kwh
+    selected_end_kwh = end_kwh
+    if selected_shift != "all":
+        shift_windows = [w for w in get_shift_windows(from_dt, to_dt) if w[2].startswith(selected_shift)]
+        if shift_windows:
+            first_window = shift_windows[0]
+            last_window = shift_windows[-1]
+            first_start_row, _ = fetch_kwh_bounds_in_window(cur, plant, int(meter), first_window[0], first_window[1])
+            _, last_end_row = fetch_kwh_bounds_in_window(cur, plant, int(meter), last_window[0], last_window[1])
+            selected_start_kwh = first_start_row["kwh"] if first_start_row else None
+            selected_end_kwh = last_end_row["kwh"] if last_end_row else None
+
+    response = jsonify({
+        "meter_id": meter,
+        "meter_name": meter_config.get("name"),
+        "mode": mode,
+        "selected_shift": selected_shift,
+        "from_dt": from_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        "to_dt": to_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        "yesterday_total_kwh": total_consumption,
+        "range_start_kwh": selected_start_kwh,
+        "range_end_kwh": selected_end_kwh,
+        "current_shift_name": get_shift_name(now),
+        "current_shift_start": shift_start.strftime("%Y-%m-%d %H:%M:%S"),
+        "current_shift_end": shift_end.strftime("%Y-%m-%d %H:%M:%S"),
+        "current_shift_start_kwh": current_shift_start_kwh,
+        "current_shift_end_kwh": current_shift_end_kwh,
+        "current_shift_consumption_kwh": current_shift_consumption,
+        "selected_total_kwh": selected_total_kwh,
+        "bars": bars
+    })
+    conn.close()
+    return response
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)

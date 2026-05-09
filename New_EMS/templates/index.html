@@ -1,21 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EMS Dashboard</title>
-    <!-- Modern Professional Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
+{% extends "base.html" %}
+
+{% block title %}EMS Dashboard{% endblock %}
+
+{% block content %}
     <div class="navbar">
-        <div>
+        <div class="nav-left">
             <h1 id="dashboardTitle">
-                Energy Monitoring Dashboard
+                Energy Monitoring System
             </h1>
             <p class="subtitle">
-                Real Time Energy Monitoring System
+                FUSO Energy Monitoring System
             </p>
         </div>
         <div class="nav-right">
@@ -26,30 +20,106 @@
                 <span class="status-icon"></span> Live
             </div>
             <div class="time-card">
-                <label>Current Time</label>
-                <h3 id="currentTime"></h3>
+                <div class="time-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6l4 2"></path></svg>
+                </div>
+                <div>
+                    <label>Current Shift Time</label>
+                    <h3 id="currentTime"></h3>
+                </div>
             </div>
         </div>
     </div>
     <div class="container">
-        <div class="select-container">
+        <!-- PROMINENT PLANT SELECTION -->
+        <div class="plant-selection-wrapper">
             <div class="select-card">
-                <label>Plant</label>
+                <label>Select Manufacturing Plant</label>
                 <select id="plantSelect" aria-label="Select Manufacturing Plant">
                     <option value="">Select Plant</option>
                 </select>
             </div>
-            <div class="select-card">
-                <label>Meter</label>
-                <select id="meterSelect" aria-label="Select Specific Meter">
-                    <option value="">Select Meter</option>
-                </select>
+        </div>
+
+        <!-- LANDING PAGE VIEW -->
+        <div id="landingView">
+            <div class="hero-section">
+                <h2>Welcome to FUSO Energy Monitoring System</h2>
+                <p>Advanced Industrial Power Monitoring & Energy Analytics. Select a plant from the menu above to start exploring real-time data.</p>
+            </div>
+            
+            <div class="insight-grid" style="display: grid !important;">
+                <div class="insight-card">
+                    <div class="insight-icon">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+                    </div>
+                    <h4>Live Monitoring</h4>
+                    <p>Track voltage, current, and power parameters in real-time across all your industrial devices.</p>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-icon">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                    </div>
+                    <h4>Shift Analysis</h4>
+                    <p>Deep dive into energy consumption patterns across different production shifts (A, B, and C).</p>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-icon">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20m-5-5l5 5 5-5"></path></svg>
+                    </div>
+                    <h4>Data Export</h4>
+                    <p>Generate and export comprehensive energy reports for auditing and operational planning.</p>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-icon">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                    </div>
+                    <h4>Smart Alerts</h4>
+                    <p>Stay informed about device status and power fluctuations with our built-in monitoring system.</p>
+                </div>
             </div>
         </div>
-        <!-- PARAMETER CARDS -->
-        <div class="cards" id="cardsContainer">
+
+        <!-- DASHBOARD VIEW (Hidden by default) -->
+        <div id="dashboardView" style="display: none;">
+            <div class="select-container">
+                <div class="select-card">
+                    <label>Meter</label>
+                    <select id="meterSelect" aria-label="Select Specific Meter">
+                        <option value="">Select Meter</option>
+                    </select>
+                </div>
+                <label class="tick-card" for="shiftAnalysisToggle">
+                    <input id="shiftAnalysisToggle" type="checkbox" checked />
+                    <span>Enable Shift Analysis</span>
+                </label>
+                <div class="select-card">
+                    <label>Shift</label>
+                    <select id="shiftSelect" aria-label="Select Shift">
+                        <option value="all">All Shifts</option>
+                        <option value="Shift A">Shift A</option>
+                        <option value="Shift B">Shift B</option>
+                        <option value="Shift C">Shift C</option>
+                    </select>
+                </div>
+                <div class="select-card">
+                    <label>From (Date & Time)</label>
+                    <input id="fromDateTime" type="datetime-local" />
+                </div>
+                <div class="select-card">
+                    <label>To (Date & Time)</label>
+                    <input id="toDateTime" type="datetime-local" />
+                </div>
+                <button id="submitFiltersBtn" class="submit-btn" type="button">Submit</button>
+            </div>
+            <p id="shiftDisabledNote" class="inline-note" style="display:none;">Shift analysis is disabled for Main Incomer.</p>
+            <!-- PARAMETER CARDS -->
+            <div class="cards" id="cardsContainer">
+            </div>
         </div>
     </div>
+{% endblock %}
+
+{% block scripts %}
     <script src="/static/script.js"></script>
-</body>
-</html>
+{% endblock %}
