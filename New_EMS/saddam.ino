@@ -27,7 +27,7 @@
 
 #define RELAY1_PIN           2
 #define RELAY2_PIN          16
-#define PUSH_BUTTON_PIN     35
+#define PUSH_BUTTON_PIN     27
 #define BUTTON_LONGPRESS_MS 5000
 
 // ─── BAUD RATES ──────────────────────────────────────────────────────────────
@@ -67,6 +67,9 @@ const char* WIFI_PASSWORD = "0246813579";
 // ─── UDP ─────────────────────────────────────────────────────────────────────
 const char* UDP_TARGET_IP = "10.232.99.197";
 const uint16_t UDP_PORT   = 5005;
+
+const unsigned long WIFI_RETRY_INTERVAL_MS = 30000UL; // minimum time between reconnect attempts
+unsigned long lastWifiAttemptMs = 0;
 
 // ─── RUNTIME PARAMETERS (loaded from Preferences) ────────────────────────────
 uint16_t TEMP_DEFAULT  = 120;
@@ -256,8 +259,15 @@ void startWiFiConfigPortal() {
                   LOCK_DURATION_MINUTES);
 }
 
-void connectWiFi() {
-    if (WiFi.status() == WL_CONNECTED) return;
+bool connectWiFi() {
+    if (WiFi.status() == WL_CONNECTED) {
+        return true;
+    }
+
+    if (millis() - lastWifiAttemptMs < WIFI_RETRY_INTERVAL_MS) {
+        return false;
+    }
+    lastWifiAttemptMs = millis();
 
     Serial.println("[WiFi] Connecting...");
     WiFi.disconnect(false);
@@ -272,19 +282,20 @@ void connectWiFi() {
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     }
 
-    // Blocking connect attempt: wait up to 20 s for WiFi to join.
     uint32_t start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 20000UL) {
-        delay(500);
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000UL) {
+        delay(250);
         Serial.print(".");
     }
     Serial.println();
 
     if (WiFi.status() == WL_CONNECTED) {
         Serial.printf("[WiFi] Connected. IP: %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        Serial.println("[WiFi] FAILED — UDP will be skipped this cycle.");
+        return true;
     }
+
+    Serial.println("[WiFi] FAILED — UDP will be skipped this cycle.");
+    return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -760,9 +771,6 @@ void setup() {
     }
 
     // WiFi (after all hardware comms)
-    if (digitalRead(PUSH_BUTTON_PIN) == LOW && isConfigButtonHeld()) {
-        startWiFiConfigPortal();
-    }
     connectWiFi();
     udp.begin(UDP_PORT);
     Serial.printf("[SETUP] UDP ready on port %u\n", UDP_PORT);
@@ -778,6 +786,10 @@ void setup() {
 // LOOP
 // ─────────────────────────────────────────────────────────────────────────────
 void loop() {
+    if (digitalRead(PUSH_BUTTON_PIN) == LOW && isConfigButtonHeld()) {
+        startWiFiConfigPortal();
+        connectWiFi();
+    }
     switch (cyclePhase) {
 
         case PHASE_READING:
