@@ -23,13 +23,28 @@ const sunIcon = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2=
 const plantThemes = {
     "Automotive": {
         primaryColor: "#3b82f6", // Blue
-        darkBgGradient: "linear-gradient(135deg, #0f172a 0%, #13171d 50%, #3b82f61a 100%)", // Dark base with a hint of blue
-        lightBgGradient: "linear-gradient(135deg, #f1f5f9 0%, #cbd5e1 50%, #3b82f61a 100%)" // Light base with a hint of blue
+        darkBgGradient: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #1e293b 100%)",
+        lightBgGradient: "linear-gradient(135deg, #f1f5f9 0%, #dbeafe 50%, #e0e7ff 100%)"
+    },
+    "Lamination": {
+        primaryColor: "#06b6d4", // Cyan
+        darkBgGradient: "linear-gradient(135deg, #0f172a 0%, #112a2a 50%, #1e293b 100%)",
+        lightBgGradient: "linear-gradient(135deg, #f1f5f9 0%, #cffafe 50%, #e0e7ff 100%)"
+    },
+    "Machining": {
+        primaryColor: "#8b5cf6", // Purple
+        darkBgGradient: "linear-gradient(135deg, #0f172a 0%, #221c35 50%, #1e293b 100%)",
+        lightBgGradient: "linear-gradient(135deg, #f1f5f9 0%, #f5f3ff 50%, #e0e7ff 100%)"
     },
     "IG Plant": {
-        primaryColor: "#22c55e",    // Green
-        darkBgGradient: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #22c55e1a 100%)", // Dark base with a hint of green
-        lightBgGradient: "linear-gradient(135deg, #f1f5f9 0%, #cbd5e1 50%, #22c55e1a 100%)" // Light base with a hint of green
+        primaryColor: "#10b981", // Green
+        darkBgGradient: "linear-gradient(135deg, #0f172a 0%, #0d221c 50%, #1e293b 100%)",
+        lightBgGradient: "linear-gradient(135deg, #f1f5f9 0%, #d1fae5 50%, #e0e7ff 100%)"
+    },
+    "Foundry": {
+        primaryColor: "#f59e0b", // Amber
+        darkBgGradient: "linear-gradient(135deg, #0f172a 0%, #2b2211 50%, #1e293b 100%)",
+        lightBgGradient: "linear-gradient(135deg, #f1f5f9 0%, #fef3c7 50%, #e0e7ff 100%)"
     }
 };
 let meterMetaById = {};
@@ -264,7 +279,8 @@ function createCards(data){
     // Add timestamp info
     const timeInfo = document.createElement("div");
     timeInfo.style.gridColumn = "1 / -1";
-    timeInfo.innerHTML = `<p style="color: var(--text-sub); font-size: 14px; margin: 0 0 10px 5px;">Last Updated: ${data.timestamp}</p>`;
+    timeInfo.className = "last-updated-info";
+    timeInfo.innerHTML = `<p>Last Updated: ${data.timestamp}</p>`;
     cardsContainer.appendChild(timeInfo);
 
     // Incomer meter
@@ -356,8 +372,8 @@ function createCardsForAll(dataArray){
         cardGrid.className = "cards"; // Reuse the grid styling
 
         meterDiv.innerHTML = `
-            <h3 style="margin-bottom: 5px; color: var(--text-main);">${d.meter_name}</h3>
-            <p style="font-size: 12px; color: var(--text-sub); margin: 0 0 15px 0;">Last Updated: ${d.timestamp}</p>
+            <h3 class="meter-section-title">${d.meter_name}</h3>
+            <p class="last-updated-info">Last Updated: ${d.timestamp}</p>
         `;
 
         // Incomer meter
