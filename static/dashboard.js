@@ -334,8 +334,15 @@ function startLiveStream() {
   };
 
   liveSource.onerror = () => {
-    // Browser auto-retries SSE. Keep fallback polling active to avoid stale UI.
+    console.warn('SSE connection lost. Switching to fallback polling.');
+    // Close the current instance to prevent overlapping retry loops
+    if (liveSource) {
+      liveSource.close();
+      liveSource = null;
+    }
     startFallbackPolling();
+    // Attempt to restart the stream after a delay
+    setTimeout(startLiveStream, 10000);
   };
 }
 

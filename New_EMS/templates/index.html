@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EMS Dashboard</title>
+    <!-- Modern Professional Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="navbar">
+        <div>
+            <h1 id="dashboardTitle">
+                Energy Monitoring Dashboard
+            </h1>
+            <p class="subtitle">
+                Real Time Energy Monitoring System
+            </p>
+        </div>
+        <div class="nav-right">
+            <button id="themeToggle" class="theme-btn" title="Toggle Light/Dark Mode">
+                <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+            </button>
+            <div id="liveStatus" class="live-status">
+                <span class="status-icon"></span> Live
+            </div>
+            <div class="time-card">
+                <label>Current Time</label>
+                <h3 id="currentTime"></h3>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="select-container">
+            <div class="select-card">
+                <label>Plant</label>
+                <select id="plantSelect" aria-label="Select Manufacturing Plant">
+                    <option value="">Select Plant</option>
+                </select>
+            </div>
+            <div class="select-card">
+                <label>Meter</label>
+                <select id="meterSelect" aria-label="Select Specific Meter">
+                    <option value="">Select Meter</option>
+                </select>
+            </div>
+        </div>
+        <!-- PARAMETER CARDS -->
+        <div class="cards" id="cardsContainer">
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,376 @@
+:root {
+    --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    --nav-bg: #0b1f3a;
+    --card-bg: #1e293b;
+    --text-main: #f8fafc;
+    --text-sub: #94a3b8;
+    --nav-border-bottom-color: transparent; /* Default transparent */
+    --dynamic-bg-gradient: var(--bg-gradient); /* Default to theme's bg-gradient */
+    --border-color: #334155;
+    --shadow: rgba(0,0,0,0.2);
+}
+
+.light-mode {
+    --bg-gradient: linear-gradient(135deg, #f1f5f9 0%, #cbd5e1 100%);
+    --nav-bg: #ffffff;
+    --card-bg: #ffffff;
+    --text-main: #0f172a;
+    --text-sub: #64748b;
+    --nav-border-bottom-color: transparent; /* Default transparent */
+    --dynamic-bg-gradient: var(--bg-gradient); /* Default to theme's bg-gradient */
+    --border-color: #cbd5e1;
+    --shadow: rgba(0,0,0,0.1);
+}
+
+body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-gradient);
+    color: var(--text-main);
+    min-height: 100vh;
+    transition: background 0.3s ease;
+}
+
+#dashboardTitle {
+    transition: color 0.3s ease, text-shadow 0.3s ease;
+    /* We use a CSS variable for the shadow so JS can update it easily */
+    text-shadow: var(--title-glow, none);
+}
+
+.navbar {
+    border-bottom: 2px solid var(--nav-border-bottom-color); /* Dynamic border */
+    background: var(--nav-bg);
+    color: var(--text-main);
+
+    padding:20px 30px;
+
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    transition: border-bottom-color 0.3s ease; /* Smooth transition */
+
+    box-shadow: 0 4px 12px var(--shadow);
+}
+
+.subtitle{
+    margin-top:-10px;
+    color: var(--text-sub);
+}
+
+.nav-right{
+    display:flex;
+    gap:15px;
+    align-items:center;
+}
+
+.select-card,
+.time-card{
+
+    background: var(--card-bg);
+    color: var(--text-main);
+
+    padding:12px;
+    border-radius:12px;
+    border: 1px solid var(--border-color);
+    min-width:180px;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.select-card label,
+.time-card label{
+
+    font-size:12px;
+    color: var(--text-sub);
+}
+
+select{
+
+    width:100%;
+    margin-top:5px;
+
+    border:none;
+    outline:none;
+
+    color: inherit;
+    font-size:16px;
+    background:transparent;
+}
+
+option {
+    background-color: var(--card-bg);
+    color: var(--text-main);
+}
+
+.container{
+    padding:25px;
+}
+
+.cards{
+
+    display:grid;
+
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+
+    gap:20px;
+
+    margin-bottom:25px;
+}
+
+.card{
+
+    background:white;
+
+    border-radius:16px;
+
+    padding:20px;
+
+    box-shadow:0 4px 12px rgba(0,0,0,0.1);
+
+    transition:0.3s;
+}
+
+.card:hover{
+    transform:translateY(-4px);
+}
+
+.card h3{
+    margin:0;
+    color:#666;
+}
+
+.card p{
+
+    font-size:34px;
+    font-weight:bold;
+
+    margin-top:15px;
+
+    color:#0b1f3a;
+}
+
+.green{
+    background:#16a34a;
+}
+
+.green h3,
+.green p{
+    color:white;
+}
+
+.table-container{
+
+    background:white;
+
+    border-radius:16px;
+
+    overflow:hidden;
+
+    box-shadow:0 4px 12px rgba(0,0,0,0.1);
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+table th{
+
+    background:#0b1f3a;
+    color:white;
+
+    padding:14px;
+}
+
+table td{
+
+    padding:12px;
+    border-bottom:1px solid #ddd;
+
+    text-align:center;
+}
+
+.status-ok{
+    color:green;
+    font-weight:bold;
+}
+
+.status-off{
+    color:red;
+    font-weight:bold;
+}
+
+.select-container {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.live-status {
+    display: none;
+    color: #16a34a;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+}
+
+.status-icon {
+    width: 10px;
+    height: 10px;
+    background: #16a34a;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.meter-section {
+    margin-bottom: 30px;
+    border: 1px solid var(--border-color);
+    padding: 15px;
+    border-radius: 12px;
+    background: var(--card-bg);
+}
+
+/* From Uiverse.io by Cobp */ 
+.card-container {
+  width: 100%;
+  box-sizing: border-box;
+  background: linear-gradient(
+    to top right,
+    #975af4,
+    #2f7cf8 40%,
+    #78aafa 65%,
+    #934cff 100%
+  );
+  padding: 4px;
+  border-radius: 32px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Error state styling with pulse animation */
+.card-container.error-status {
+  background: linear-gradient(
+    to top right,
+    #ff5f6d,
+    #ffc371 40%,
+    #ff5f6d 65%,
+    #ffc371 100%
+  );
+  animation: pulse-error 2s infinite;
+}
+
+@keyframes pulse-error {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 95, 109, 0.7);
+  }
+  70% {
+    transform: scale(1.02);
+    box-shadow: 0 0 20px 10px rgba(255, 95, 109, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 95, 109, 0);
+  }
+}
+
+.card-container .title-card {
+  display: flex;
+  align-items: center;
+  padding: 16px 18px;
+  justify-content: space-between;
+  color: #fff;
+}
+.card-container .title-card p {
+  font-size: 14px;
+  font-weight: 600;
+  font-style: italic;
+  text-shadow: 2px 2px 6px #2975ee;
+  margin: 0;
+}
+
+.card-container .card-content {
+  width: 100%;
+  height: 100%;
+  background-color: #161a20;
+  border-radius: 30px;
+  color: #838383;
+  font-size: 12px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.card-container .card-content .title {
+  font-weight: 600;
+  color: #bab9b9;
+  margin: 0;
+}
+.card-container .card-content .plain :nth-child(1) {
+  font-size: 36px;
+  color: #fff;
+}
+.card-container .card-content .card-btn {
+  background: linear-gradient(
+    4deg,
+    #975af4,
+    #2f7cf8 40%,
+    #78aafa 65%,
+    #934cff 100%
+  );
+  padding: 8px;
+  border: none;
+  width: 100%;
+  border-radius: 8px;
+  color: white;
+  font-size: 12px;
+  transition: all 0.3s ease-in-out;
+  cursor: pointer;
+  box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.6);
+}
+.card-container .card-content .card-btn:hover {
+  color: #ffffff;
+  text-shadow: 0 0 8px #fff;
+  transform: scale(1.03);
+}
+.card-container .card-content .card-btn:active {
+  transform: scale(1);
+}
+
+/* Theme Toggle Button */
+.theme-btn {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    padding: 8px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 5px var(--shadow);
+}
+
+.theme-btn:hover {
+    transform: scale(1.1);
+    background: var(--border-color);
+}
+
+
+/* Responsive adjustments for mobile */
+@media (max-width: 480px) {
+    .card-container {
+        padding: 2px;
+        border-radius: 24px;
+    }
+
+    .card-container .card-content {
+        padding: 12px;
+        border-radius: 22px;
+        gap: 8px;
+    }
+
+    .card-container .card-content .plain :nth-child(1) {
+        font-size: 28px;
+    }
+}

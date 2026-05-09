@@ -1,0 +1,67 @@
+{
+  "Automotive": {
+    "2": {
+      "name": "Main Incomer",
+      "type": "incomer"
+    },
+    "1": {
+      "name": "Cutting",
+      "type": "submeter"
+    },
+    "3": {
+      "name": "Grinding & Polishing",
+      "type": "submeter"
+    },
+    "4": {
+      "name": "Fabrication",
+      "type": "submeter"
+    },
+    "5": {
+      "name": "Lamination",
+      "type": "submeter"
+    },
+    "6": {
+      "name": "Tempering",
+      "type": "submeter"
+    },
+    "7": {
+      "name": "Insulation",
+      "type": "submeter"
+    },
+    "8": {
+      "name": "Utilities",
+      "type": "submeter"
+    }
+  },
+
+  "IG Plant": {
+    "2": {
+      "name": "Main Incomer",
+      "type": "incomer"
+    },
+    "1": {
+      "name": "Cutting",
+      "type": "submeter"
+    },
+    "3": {
+      "name": "Grinding",
+      "type": "submeter"
+    },
+    "4": {
+      "name": "CNC Grinding",
+      "type": "submeter"
+    },
+    "5": {
+      "name": "Tempering",
+      "type": "submeter"
+    },
+    "6": {
+      "name": "Printing",
+      "type": "submeter"
+    },
+    "7": {
+      "name": "Utilities",
+      "type": "submeter"
+    }
+  }
+}

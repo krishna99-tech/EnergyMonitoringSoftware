@@ -18,8 +18,8 @@ import random
 import threading
 
 # ── CONFIG ────────────────────────────────────────────────────────
-SERVER_IP   = "127.0.0.1"   # Change to your Flask server IP if remote
-SERVER_PORT = 6503
+SERVER_IP   = "115.240.192.141"   # Change to your Flask server IP if remote
+SERVER_PORT = 8507
 INTERVAL    = 50              # seconds between each device transmission
 NUM_METERS  = 18
 ENERGY_STEP = 1.0             # fixed increment per send for online meters (kWh)
@@ -28,16 +28,16 @@ TRANSIENT_FAIL_RATE = 0.0     # 0.0 disables random temporary OFFLINE events
 # ──────────────────────────────────────────────────────────────────
 
 DEVICES = [
-    "ESP32-BLOCK-A",
-    "ESP32-BLOCK-B",
-    "ESP32-BLOCK-C",
+    "BLOCK-A",
+    "BLOCK-B",
+    "BLOCK-C",
 ]
 
 # Meters that are permanently offline per device (simulate real failures)
 OFFLINE_METERS = {
-    "ESP32-BLOCK-A": [],           # all online
-    "ESP32-BLOCK-B": [5, 11],      # meters 5 and 11 offline
-    "ESP32-BLOCK-C": [3, 14, 17],  # meters 3, 14, 17 offline
+    "BLOCK-A": [],           # all online
+    "BLOCK-B": [5, 11],      # meters 5 and 11 offline
+    "BLOCK-C": [3, 14, 17],  # meters 3, 14, 17 offline
 }
 
 # Persistent cumulative energy per device/meter
