@@ -16,6 +16,7 @@ const fromDateTime = document.getElementById("fromDateTime");
 const toDateTime = document.getElementById("toDateTime");
 const submitFiltersBtn = document.getElementById("submitFiltersBtn");
 const shiftAnalysisToggle = document.getElementById("shiftAnalysisToggle");
+const barGraphToggle = document.getElementById("barGraphToggle");
 const shiftDisabledNote = document.getElementById("shiftDisabledNote");
 const moonIcon = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
 const sunIcon = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="4.22" x2="19.78" y2="5.64"></line>';
@@ -197,20 +198,9 @@ function setShiftControlsEnabled(enabled) {
 }
 
 function syncShiftUiForMeter() {
-    const meter = meterSelect.value;
-    const meta = meterMetaById[meter];
-    const isMainIncomer = !!meta && meta.type === "incomer";
-
-    if (isMainIncomer) {
-        shiftAnalysisToggle.checked = false;
-        shiftAnalysisToggle.disabled = true;
-        setShiftControlsEnabled(false);
-        shiftDisabledNote.style.display = "block";
-    } else {
-        shiftAnalysisToggle.disabled = false;
-        setShiftControlsEnabled(shiftAnalysisToggle.checked);
-        shiftDisabledNote.style.display = "none";
-    }
+    shiftAnalysisToggle.disabled = false;
+    setShiftControlsEnabled(shiftAnalysisToggle.checked);
+    shiftDisabledNote.style.display = "none";
 }
 
 // ================= LOAD PLANTS =================
@@ -269,6 +259,48 @@ async function loadMeters(plant){
     meterSelect.appendChild(allOption);
 }
 
+// ================= BAR CHART HELPER =================
+
+function getBarChartHTML(title, dataPoints, isFullWidth = false) {
+    if (!dataPoints || dataPoints.length === 0) return `<div style="color: var(--text-sub); padding: 20px;">No bar data available.</div>`;
+    
+    const maxVal = Math.max(...dataPoints.map(b => b.value), 0.01);
+    
+    let rowsHtml = dataPoints.map(b => {
+        const percent = (b.value / maxVal) * 100;
+        return `
+        <div class="fallback-chart-row">
+            <div class="fallback-chart-value">${b.value} ${b.unit || ''}</div>
+            <div class="fallback-chart-track">
+                <div class="fallback-chart-fill" style="height: ${percent}%;"></div>
+            </div>
+            <div class="fallback-chart-label">${b.label}</div>
+        </div>`;
+    }).join('');
+
+    const yAxisHtml = `
+    <div style="display: flex; flex-direction: column; justify-content: space-between; height: 180px; margin-bottom: 26px; padding-right: 8px; font-size: 11px; color: var(--text-sub); text-align: right;">
+        <span>${maxVal >= 10 ? Math.round(maxVal) : maxVal.toFixed(1)}</span>
+        <span>${maxVal >= 10 ? Math.round(maxVal * 0.75) : (maxVal * 0.75).toFixed(1)}</span>
+        <span>${maxVal >= 10 ? Math.round(maxVal * 0.5) : (maxVal * 0.5).toFixed(1)}</span>
+        <span>${maxVal >= 10 ? Math.round(maxVal * 0.25) : (maxVal * 0.25).toFixed(1)}</span>
+        <span>0</span>
+    </div>`;
+
+    const containerStyle = isFullWidth ? 'style="grid-column: 1 / -1; width: 100%;"' : '';
+
+    return `
+    <div class="graph-container" ${containerStyle}>
+        <h4 class="graph-title">${title}</h4>
+        <div style="display: flex; align-items: flex-end; width: 100%; overflow-x: auto;">
+            ${yAxisHtml}
+            <div class="fallback-chart" style="flex: 1; margin-top: 0; min-height: 240px; border-left: 2px solid rgba(148, 163, 184, 0.5); border-bottom: 2px solid rgba(148, 163, 184, 0.5);">
+                ${rowsHtml}
+            </div>
+        </div>
+    </div>`;
+}
+
 // ================= CREATE CARDS =================
 
 function createCards(data){
@@ -310,14 +342,25 @@ function createCards(data){
             ["kVA Maximum Demand", data.kva_max_demand, "kVA"]
         ];
 
-        params.forEach(p=>{
-            cardsContainer.insertAdjacentHTML('beforeend', getCardHTML(p[0], p[1], p[2], data.status, false, selectedMeterName));
-        });
+        if (barGraphToggle.checked) {
+            params.forEach(p => {
+                cardsContainer.insertAdjacentHTML('beforeend', getBarChartHTML(p[0], [{label: "Current", value: p[1] ?? 0, unit: p[2]}]));
+            });
+        } else {
+            params.forEach(p=>{
+                cardsContainer.insertAdjacentHTML('beforeend', getCardHTML(p[0], p[1], p[2], data.status, false, selectedMeterName));
+            });
+        }
     }
 
     // Submeter KWH (fallback live card)
     if(data.meter_type === "submeter"){
-        cardsContainer.insertAdjacentHTML('beforeend', getCardHTML("Energy", data.kwh, "kWh", data.status, true, selectedMeterName));
+        if (barGraphToggle.checked) {
+            const dataPoints = [{label: "Current Energy", value: data.kwh ?? 0, unit: "kWh"}];
+            cardsContainer.insertAdjacentHTML('beforeend', getBarChartHTML("Energy Consumption", dataPoints));
+        } else {
+            cardsContainer.insertAdjacentHTML('beforeend', getCardHTML("Energy", data.kwh, "kWh", data.status, true, selectedMeterName));
+        }
     }
 }
 
@@ -330,17 +373,27 @@ function renderEnergySummaryCard(summary) {
     const rangeLabel = `${summary.from_dt || "-"} to ${summary.to_dt || "-"}`;
 
     cardsContainer.innerHTML = "";
-    cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Selected Range Consumption", selectedTotal, "kWh", "OK", true, meterName, {
-        description: `Matches graph total | ${rangeLabel}`
-    }));
-    cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Shift Start", startKwh, "kWh", "OK", false, meterName, {
-        btnText: "Operational",
-        description: `Range: ${rangeLabel}`
-    }));
-    cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Shift End", endKwh, "kWh", "OK", false, meterName, {
-        btnText: "Operational",
-        description: `Range: ${rangeLabel}`
-    }));
+    if (barGraphToggle.checked && summary.bars && summary.bars.length > 0) {
+        const dataPoints = summary.bars.map(b => ({
+            label: b.label,
+            value: b.consumption,
+            unit: "kWh"
+        }));
+        const title = `Energy Consumption - ${summary.selected_shift === 'all' ? 'All Shifts' : summary.selected_shift}`;
+        cardsContainer.insertAdjacentHTML('beforeend', getBarChartHTML(title, dataPoints, true));
+    } else {
+        cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Selected Range Consumption", selectedTotal, "kWh", "OK", true, meterName, {
+            description: `Matches graph total | ${rangeLabel}`
+        }));
+        cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Shift Start", startKwh, "kWh", "OK", false, meterName, {
+            btnText: "Operational",
+            description: `Range: ${rangeLabel}`
+        }));
+        cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Shift End", endKwh, "kWh", "OK", false, meterName, {
+            btnText: "Operational",
+            description: `Range: ${rangeLabel}`
+        }));
+    }
 }
 
 async function loadEnergySummary(plant, meter) {
@@ -403,14 +456,25 @@ function createCardsForAll(dataArray){
                 ["kVA Maximum Demand", d.kva_max_demand, "kVA"]
             ];
 
-            params.forEach(p => {
-                cardGrid.insertAdjacentHTML('beforeend', getCardHTML(p[0], p[1], p[2], d.status, false, d.meter_name));
-            });
+            if (barGraphToggle.checked) {
+                params.forEach(p => {
+                    cardGrid.insertAdjacentHTML('beforeend', getBarChartHTML(p[0], [{label: "Current", value: p[1] ?? 0, unit: p[2]}]));
+                });
+            } else {
+                params.forEach(p => {
+                    cardGrid.insertAdjacentHTML('beforeend', getCardHTML(p[0], p[1], p[2], d.status, false, d.meter_name));
+                });
+            }
         }
 
         // Submeter KWH
         if(d.meter_type === "submeter"){
-            cardGrid.insertAdjacentHTML('beforeend', getCardHTML("Energy", d.kwh, "kWh", d.status, true, d.meter_name));
+            if (barGraphToggle.checked) {
+                const dataPoints = [{label: "Current Energy", value: d.kwh ?? 0, unit: "kWh"}];
+                cardGrid.insertAdjacentHTML('beforeend', getBarChartHTML("Energy Consumption", dataPoints));
+            } else {
+                cardGrid.insertAdjacentHTML('beforeend', getCardHTML("Energy", d.kwh, "kWh", d.status, true, d.meter_name));
+            }
         }
 
         meterDiv.appendChild(cardGrid);
@@ -538,7 +602,12 @@ async function loadBaseCardsOnMeterSelection() {
                     Data Date: ${baseDate} (Yesterday)
                 </div>`
             );
-            cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Yesterday Total Consumption", yVal, "kWh", data[0].status || "OK", true, meterName));
+            if (barGraphToggle.checked) {
+                const dataPoints = [{label: "Yesterday Total", value: yVal, unit: "kWh"}];
+                cardsContainer.insertAdjacentHTML("beforeend", getBarChartHTML("Energy Consumption", dataPoints, true));
+            } else {
+                cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Yesterday Total Consumption", yVal, "kWh", data[0].status || "OK", true, meterName));
+            }
         } else {
             createCards(data[0]);
         }
@@ -555,10 +624,19 @@ function createSummaryCardsForAll(summaries) {
         meterDiv.innerHTML = `<h3 style="margin-bottom: 10px; color: var(--text-main);">${summary.meter_name}</h3>`;
         const cardGrid = document.createElement("div");
         cardGrid.className = "cards";
-        cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Energy", summary.yesterday_total_kwh ?? 0, "kWh", "OK", true, summary.meter_name));
-        cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift Start", summary.current_shift_start_kwh ?? 0, "kWh", "OK", false, summary.meter_name));
-        cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift End", summary.current_shift_end_kwh ?? 0, "kWh", "OK", false, summary.meter_name));
-        cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift Consumption", summary.current_shift_consumption_kwh ?? 0, "kWh", "OK", false, summary.meter_name));
+        if (barGraphToggle.checked && summary.bars && summary.bars.length > 0) {
+            const dataPoints = summary.bars.map(b => ({
+                label: b.label,
+                value: b.consumption,
+                unit: "kWh"
+            }));
+            cardGrid.insertAdjacentHTML("beforeend", getBarChartHTML("Energy Consumption", dataPoints, true));
+        } else {
+            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Energy", summary.yesterday_total_kwh ?? 0, "kWh", "OK", true, summary.meter_name));
+            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift Start", summary.current_shift_start_kwh ?? 0, "kWh", "OK", false, summary.meter_name));
+            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift End", summary.current_shift_end_kwh ?? 0, "kWh", "OK", false, summary.meter_name));
+            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift Consumption", summary.current_shift_consumption_kwh ?? 0, "kWh", "OK", false, summary.meter_name));
+        }
         meterDiv.appendChild(cardGrid);
         cardsContainer.appendChild(meterDiv);
     });
@@ -595,6 +673,13 @@ meterSelect.addEventListener("change", loadBaseCardsOnMeterSelection);
 meterSelect.addEventListener("change", syncShiftUiForMeter);
 submitFiltersBtn.addEventListener("click", loadData);
 shiftAnalysisToggle.addEventListener("change", syncShiftUiForMeter);
+barGraphToggle.addEventListener("change", () => {
+    if (meterSelect.value && !shiftSelect.disabled && fromDateTime.value && toDateTime.value) {
+        loadData();
+    } else {
+        loadBaseCardsOnMeterSelection();
+    }
+});
 plantSelect.addEventListener("change", () => updateInsightCardsMeta({ barCount: 0 }));
 shiftSelect.addEventListener("change", () => updateInsightCardsMeta({ barCount: 0 }));
 fromDateTime.addEventListener("change", () => updateInsightCardsMeta({ barCount: 0 }));
