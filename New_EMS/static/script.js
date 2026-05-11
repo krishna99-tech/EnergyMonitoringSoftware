@@ -600,6 +600,15 @@ shiftSelect.addEventListener("change", () => updateInsightCardsMeta({ barCount: 
 fromDateTime.addEventListener("change", () => updateInsightCardsMeta({ barCount: 0 }));
 toDateTime.addEventListener("change", () => updateInsightCardsMeta({ barCount: 0 }));
 
+// ================= SCROLL LISTENER =================
+window.addEventListener("scroll", () => {
+    if (window.scrollY > 20) {
+        navbar.classList.add("is-sticky");
+    } else {
+        navbar.classList.remove("is-sticky");
+    }
+});
+
 // ================= THEME TOGGLE =================
 
 function toggleTheme() {

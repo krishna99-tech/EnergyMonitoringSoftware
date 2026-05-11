@@ -76,9 +76,11 @@ body {
     top: 0;
     border-radius: 0;
     width: 100%;
+    max-width: 100%;
     background: rgba(15, 23, 42, 0.95);
     backdrop-filter: blur(20px);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    border-bottom: 2px solid var(--nav-border-bottom-color, transparent);
 }
 
 .light-mode .navbar {
