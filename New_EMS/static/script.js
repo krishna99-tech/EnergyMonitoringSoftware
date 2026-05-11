@@ -49,6 +49,9 @@ const plantThemes = {
     }
 };
 let meterMetaById = {};
+let liveEventSource = null;
+let pendingStreamRefreshTimer = null;
+let streamRefreshInProgress = false;
 
 function hexToRgba(hex, alpha) {
     const safeHex = (hex || "").replace("#", "");
@@ -185,6 +188,52 @@ function setDefaultDateRange() {
 }
 
 function updateInsightCardsMeta(_extra = {}) {}
+
+function closeLiveStream() {
+    if (liveEventSource) {
+        liveEventSource.close();
+        liveEventSource = null;
+    }
+}
+
+function scheduleRefreshFromStream() {
+    if (pendingStreamRefreshTimer) return;
+    pendingStreamRefreshTimer = setTimeout(async () => {
+        pendingStreamRefreshTimer = null;
+        if (streamRefreshInProgress) return;
+        streamRefreshInProgress = true;
+        try {
+            if (!plantSelect.value || !meterSelect.value) return;
+            if (shiftAnalysisToggle.checked && !shiftSelect.disabled) {
+                await loadData();
+            } else {
+                await loadBaseCardsOnMeterSelection();
+            }
+        } catch (_e) {
+            // no-op: stream should continue even if one refresh fails
+        } finally {
+            streamRefreshInProgress = false;
+        }
+    }, 300);
+}
+
+function setupLiveStream() {
+    closeLiveStream();
+    const plant = plantSelect.value;
+    const meter = meterSelect.value;
+    if (!plant || !meter) return;
+
+    const streamUrl = `/stream_latest?plant=${encodeURIComponent(plant)}&meter=${encodeURIComponent(meter)}`;
+    liveEventSource = new EventSource(streamUrl);
+
+    liveEventSource.addEventListener("latest", () => {
+        scheduleRefreshFromStream();
+    });
+
+    liveEventSource.addEventListener("error", () => {
+        // Browser auto-reconnects EventSource by default.
+    });
+}
 
 function setShiftControlsEnabled(enabled) {
     shiftSelect.disabled = !enabled;
@@ -370,6 +419,8 @@ function renderEnergySummaryCard(summary) {
     const endKwh = summary.range_end_kwh ?? 0;
     const selectedTotal = summary.selected_total_kwh ?? 0;
     const selectedShift = summary.selected_shift || shiftSelect.value || "all";
+    const valueUnit = summary.value_unit || "kWh";
+    const metricName = summary.metric_name || "Energy Consumption";
     const rangeLabel = `${summary.from_dt || "-"} to ${summary.to_dt || "-"}`;
 
     cardsContainer.innerHTML = "";
@@ -377,19 +428,19 @@ function renderEnergySummaryCard(summary) {
         const dataPoints = summary.bars.map(b => ({
             label: b.label,
             value: b.consumption,
-            unit: "kWh"
+            unit: valueUnit
         }));
-        const title = `Energy Consumption - ${summary.selected_shift === 'all' ? 'All Shifts' : summary.selected_shift}`;
+        const title = `${metricName} - ${summary.selected_shift === 'all' ? 'All Shifts' : summary.selected_shift}`;
         cardsContainer.insertAdjacentHTML('beforeend', getBarChartHTML(title, dataPoints, true));
     } else {
-        cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Selected Range Consumption", selectedTotal, "kWh", "OK", true, meterName, {
+        cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Selected Range Consumption", selectedTotal, valueUnit, "OK", true, meterName, {
             description: `Matches graph total | ${rangeLabel}`
         }));
-        cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Shift Start", startKwh, "kWh", "OK", false, meterName, {
+        cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Shift Start", startKwh, valueUnit, "OK", false, meterName, {
             btnText: "Operational",
             description: `Range: ${rangeLabel}`
         }));
-        cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Shift End", endKwh, "kWh", "OK", false, meterName, {
+        cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Shift End", endKwh, valueUnit, "OK", false, meterName, {
             btnText: "Operational",
             description: `Range: ${rangeLabel}`
         }));
@@ -406,6 +457,43 @@ async function loadEnergySummary(plant, meter) {
         return { error: `Energy summary failed (${res.status}).`, details: errText.slice(0, 180) };
     }
     return res.json();
+}
+
+async function loadIncomerShiftSummary(plant, meter) {
+    const from_dt = fromDateTime.value;
+    const to_dt = toDateTime.value;
+    const shift = shiftSelect.value || "all";
+    const res = await fetch(`/incomer_shift_summary?plant=${encodeURIComponent(plant)}&meter=${encodeURIComponent(meter)}&shift=${encodeURIComponent(shift)}&from_dt=${encodeURIComponent(from_dt)}&to_dt=${encodeURIComponent(to_dt)}`);
+    if (!res.ok) {
+        const errText = await res.text();
+        return { error: `Incomer summary failed (${res.status}).`, details: errText.slice(0, 180) };
+    }
+    return res.json();
+}
+
+function renderIncomerShiftGraphs(summary) {
+    cardsContainer.innerHTML = "";
+    const rangeLabel = `${summary.from_dt || "-"} to ${summary.to_dt || "-"}`;
+    cardsContainer.insertAdjacentHTML(
+        "beforeend",
+        `<div style="grid-column:1 / -1; color: var(--text-sub); font-size: 13px; margin: 0 0 8px 4px;">
+            Shift: ${summary.selected_shift === "all" ? "All Shifts" : summary.selected_shift} | Range: ${rangeLabel}
+        </div>`
+    );
+
+    if (!summary.series || summary.series.length === 0) {
+        cardsContainer.insertAdjacentHTML("beforeend", `<div style="color: var(--text-sub); padding: 20px;">No incomer range data available for the selected shift/date range.</div>`);
+        return;
+    }
+
+    summary.series.forEach(s => {
+        const points = (s.bars || []).map(b => ({
+            label: b.label,
+            value: b.value ?? 0,
+            unit: s.unit || ""
+        }));
+        cardsContainer.insertAdjacentHTML("beforeend", getBarChartHTML(s.label, points));
+    });
 }
 
 // ================= CREATE CARDS FOR ALL =================
@@ -529,7 +617,17 @@ async function loadData(){
 
     } else {
         const selectedMeta = meterMetaById[meter];
-        if (selectedMeta && selectedMeta.type === "submeter") {
+        if (selectedMeta && selectedMeta.type === "incomer" && barGraphToggle.checked) {
+            const incomerSummary = await loadIncomerShiftSummary(plant, meter);
+            if (incomerSummary.error) {
+                cardsContainer.innerHTML = `<div style="color: var(--text-sub); padding: 20px;">${incomerSummary.error}</div>`;
+                return;
+            }
+            renderIncomerShiftGraphs(incomerSummary);
+            updateInsightCardsMeta({ barCount: (incomerSummary.series || []).length });
+            return;
+        }
+        if (selectedMeta && (selectedMeta.type === "submeter" || selectedMeta.type === "incomer")) {
             const summary = await loadEnergySummary(plant, meter);
             if (summary.error) {
                 cardsContainer.innerHTML = `<div style="color: var(--text-sub); padding: 20px;">${summary.error}</div>`;
@@ -667,12 +765,17 @@ plantSelect.addEventListener("change", async ()=>{
     cardsContainer.innerHTML = "";
 
     document.getElementById("liveStatus").style.display = "none";
+    setupLiveStream();
 });
 
 meterSelect.addEventListener("change", loadBaseCardsOnMeterSelection);
 meterSelect.addEventListener("change", syncShiftUiForMeter);
+meterSelect.addEventListener("change", setupLiveStream);
 submitFiltersBtn.addEventListener("click", loadData);
-shiftAnalysisToggle.addEventListener("change", syncShiftUiForMeter);
+shiftAnalysisToggle.addEventListener("change", () => {
+    syncShiftUiForMeter();
+    scheduleRefreshFromStream();
+});
 barGraphToggle.addEventListener("change", () => {
     if (meterSelect.value && !shiftSelect.disabled && fromDateTime.value && toDateTime.value) {
         loadData();
@@ -689,8 +792,10 @@ toDateTime.addEventListener("change", () => updateInsightCardsMeta({ barCount: 0
 window.addEventListener("scroll", () => {
     if (window.scrollY > 20) {
         navbar.classList.add("is-sticky");
+        document.body.style.paddingTop = `${navbar.offsetHeight}px`;
     } else {
         navbar.classList.remove("is-sticky");
+        document.body.style.paddingTop = "0px";
     }
 });
 
@@ -726,3 +831,4 @@ if (savedTheme === "light") {
 applyThemeState();
 updateInsightCardsMeta({ barCount: 0 });
 syncShiftUiForMeter();
+window.addEventListener("beforeunload", closeLiveStream);

@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 
 # ================= UDP =================
 
-UDP_IP = "192.168.0.180"
-UDP_PORT = 6504
+UDP_IP = "115.240.192.141"
+UDP_PORT = 8507
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -145,4 +145,4 @@ print("Backfill complete. Starting live stream...")
 
 while True:
     send_snapshot(datetime.now())
-    time.sleep(20)
+    time.sleep(2)
