@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 
 # ================= UDP =================
 
-UDP_IP = "115.240.192.141"
-UDP_PORT = 8507
+UDP_IP = "192.168.0.179"  #"115.240.192.141"
+UDP_PORT = 6503     #8507
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 

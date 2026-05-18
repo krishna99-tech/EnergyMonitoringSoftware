@@ -1,1 +1,6 @@
 /meters.db
+/logs/
+*.log
+*.csv
+*.db
+/__pycache__/

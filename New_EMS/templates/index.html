@@ -31,21 +31,20 @@
         </div>
     </div>
     <div class="container">
-        <!-- PROMINENT PLANT SELECTION -->
-        <div class="plant-selection-wrapper">
-            <div class="select-card">
-                <label>Select Manufacturing Plant</label>
-                <select id="plantSelect" aria-label="Select Manufacturing Plant">
-                    <option value="">Select Plant</option>
-                </select>
-            </div>
-        </div>
-
         <!-- LANDING PAGE VIEW -->
         <div id="landingView">
             <div class="hero-section">
                 <h2>Welcome to FUSO Energy Monitoring System</h2>
-                <p>Advanced Industrial Power Monitoring & Energy Analytics. Select a plant from the menu above to start exploring real-time data.</p>
+                <p>Advanced Industrial Power Monitoring & Energy Analytics. Select a plant from the menu below to start exploring real-time data.</p>
+                <!-- PROMINENT PLANT SELECTION -->
+                <div class="plant-selection-wrapper">
+                    <div class="select-card">
+                        <label>Select Manufacturing Plant</label>
+                        <select id="plantSelect" aria-label="Select Manufacturing Plant">
+                            <option value="">Select Plant</option>
+                        </select>
+                    </div>
+                </div>
             </div>
             
             <div class="insight-grid" style="display: grid !important;">
@@ -122,6 +121,13 @@
             </div>
         </div>
     </div>
+    <button id="floatingHomeBtn" class="floating-home-btn" type="button" aria-label="Go to Home">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 10.5L12 3l9 7.5"></path>
+            <path d="M5 9.5V21h14V9.5"></path>
+        </svg>
+        <span>Home</span>
+    </button>
 {% endblock %}
 
 {% block scripts %}

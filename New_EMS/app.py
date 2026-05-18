@@ -93,10 +93,76 @@ init_db()
 with open("meter_map.json", "r") as f:
     meter_map = json.load(f)
 
+
+def normalize_historical_data():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+
+    submeter_null_cols = [
+        "freq",
+        "volt",
+        "curr",
+        "pf",
+        "kw",
+        "kva",
+        "line_voltage",
+        "line_to_line_voltage",
+        "avg_voltage",
+        "voltage_unbalance",
+        "line_current",
+        "current_l1",
+        "current_l2",
+        "current_l3",
+        "avg_current",
+        "neutral_line_current",
+        "kw_l1",
+        "kw_l2",
+        "kw_l3",
+        "kw_total",
+        "kva_l1",
+        "kva_l2",
+        "kva_l3",
+        "kva_total",
+        "kva_max_demand",
+    ]
+    null_assignments = ", ".join([f"{col}=NULL" for col in submeter_null_cols])
+
+    for plant, meters in meter_map.items():
+        for meter_id, meta in meters.items():
+            meter_name = meta.get("name", f"Meter {meter_id}")
+            meter_type = meta.get("type", "submeter")
+
+            # Keep historical rows aligned with current meter map identity.
+            cur.execute(
+                """
+                UPDATE meter_data
+                SET meter_name=?, meter_type=?
+                WHERE plant=? AND meter_id=?
+                """,
+                [meter_name, meter_type, plant, int(meter_id)]
+            )
+
+            if meter_type == "submeter":
+                # Submeters are kWh-focused; clear non-kWh electrical columns.
+                cur.execute(
+                    f"""
+                    UPDATE meter_data
+                    SET {null_assignments}
+                    WHERE plant=? AND meter_id=?
+                    """,
+                    [plant, int(meter_id)]
+                )
+
+    conn.commit()
+    conn.close()
+
+
+normalize_historical_data()
+
 # ================= UDP SERVER =================
 
 UDP_IP = "0.0.0.0"
-UDP_PORT = 6504
+UDP_PORT = 6503
 
 def udp_server():
 
@@ -128,6 +194,36 @@ def udp_server():
 
                 meter_name = config.get("name", f"Meter {meter_id}")
                 meter_type = config.get("type", "submeter")
+                is_incomer = meter_type == "incomer"
+
+                # Only incomers should persist full electrical parameters.
+                # Submeters are kWh-focused and keep non-kWh fields as NULL.
+                freq = meter.get("freq") if is_incomer else None
+                volt = meter.get("volt") if is_incomer else None
+                curr = meter.get("curr") if is_incomer else None
+                pf = meter.get("pf") if is_incomer else None
+                kw = meter.get("kw") if is_incomer else None
+                kva = meter.get("kva") if is_incomer else None
+                kwh = meter.get("kwh")
+                line_voltage = meter.get("line_voltage") if is_incomer else None
+                line_to_line_voltage = meter.get("line_to_line_voltage") if is_incomer else None
+                avg_voltage = meter.get("avg_voltage") if is_incomer else None
+                voltage_unbalance = meter.get("voltage_unbalance") if is_incomer else None
+                line_current = meter.get("line_current") if is_incomer else None
+                current_l1 = meter.get("current_l1") if is_incomer else None
+                current_l2 = meter.get("current_l2") if is_incomer else None
+                current_l3 = meter.get("current_l3") if is_incomer else None
+                avg_current = meter.get("avg_current") if is_incomer else None
+                neutral_line_current = meter.get("neutral_line_current") if is_incomer else None
+                kw_l1 = meter.get("kw_l1") if is_incomer else None
+                kw_l2 = meter.get("kw_l2") if is_incomer else None
+                kw_l3 = meter.get("kw_l3") if is_incomer else None
+                kw_total = meter.get("kw_total") if is_incomer else None
+                kva_l1 = meter.get("kva_l1") if is_incomer else None
+                kva_l2 = meter.get("kva_l2") if is_incomer else None
+                kva_l3 = meter.get("kva_l3") if is_incomer else None
+                kva_total = meter.get("kva_total") if is_incomer else None
+                kva_max_demand = meter.get("kva_max_demand") if is_incomer else None
 
                 cur.execute("""
                 INSERT INTO meter_data (
@@ -172,33 +268,32 @@ def udp_server():
                     meter_name,
                     meter_type,
                     meter.get("status"),
-
-                    meter.get("freq"),
-                    meter.get("volt"),
-                    meter.get("curr"),
-                    meter.get("pf"),
-                    meter.get("kw"),
-                    meter.get("kva"),
-                    meter.get("kwh"),
-                    meter.get("line_voltage"),
-                    meter.get("line_to_line_voltage"),
-                    meter.get("avg_voltage"),
-                    meter.get("voltage_unbalance"),
-                    meter.get("line_current"),
-                    meter.get("current_l1"),
-                    meter.get("current_l2"),
-                    meter.get("current_l3"),
-                    meter.get("avg_current"),
-                    meter.get("neutral_line_current"),
-                    meter.get("kw_l1"),
-                    meter.get("kw_l2"),
-                    meter.get("kw_l3"),
-                    meter.get("kw_total"),
-                    meter.get("kva_l1"),
-                    meter.get("kva_l2"),
-                    meter.get("kva_l3"),
-                    meter.get("kva_total"),
-                    meter.get("kva_max_demand"),
+                    freq,
+                    volt,
+                    curr,
+                    pf,
+                    kw,
+                    kva,
+                    kwh,
+                    line_voltage,
+                    line_to_line_voltage,
+                    avg_voltage,
+                    voltage_unbalance,
+                    line_current,
+                    current_l1,
+                    current_l2,
+                    current_l3,
+                    avg_current,
+                    neutral_line_current,
+                    kw_l1,
+                    kw_l2,
+                    kw_l3,
+                    kw_total,
+                    kva_l1,
+                    kva_l2,
+                    kva_l3,
+                    kva_total,
+                    kva_max_demand,
                     meter.get("timestamp") or payload.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ))
 
@@ -252,13 +347,23 @@ def latest():
     cur = conn.cursor()
 
     if meter == "all":
-        # Get the latest entry for each meter in the plant
-        query = """
-        SELECT * FROM meter_data 
-        WHERE id IN (SELECT MAX(id) FROM meter_data WHERE plant=? GROUP BY meter_id)
-        ORDER BY meter_name ASC
-        """
-        params = [plant]
+        meters = meter_map.get(str(plant), {})
+        rows = []
+        for meter_id, meta in meters.items():
+            cur.execute(
+                "SELECT * FROM meter_data WHERE plant=? AND meter_id=? ORDER BY timestamp DESC LIMIT 1",
+                [str(plant), int(meter_id)]
+            )
+            row = cur.fetchone()
+            if not row:
+                continue
+            normalized = dict(row)
+            normalized["meter_name"] = meta.get("name", normalized.get("meter_name"))
+            normalized["meter_type"] = meta.get("type", normalized.get("meter_type"))
+            rows.append(normalized)
+        rows.sort(key=lambda r: (r.get("meter_name") or ""))
+        conn.close()
+        return jsonify(rows)
     else:
         query = "SELECT * FROM meter_data WHERE plant=? AND meter_id=? ORDER BY timestamp DESC LIMIT 1"
         try:
@@ -283,12 +388,23 @@ def fetch_latest_rows(plant, meter):
     cur = conn.cursor()
 
     if meter == "all":
-        query = """
-        SELECT * FROM meter_data
-        WHERE id IN (SELECT MAX(id) FROM meter_data WHERE plant=? GROUP BY meter_id)
-        ORDER BY meter_name ASC
-        """
-        params = [plant]
+        meters = meter_map.get(str(plant), {})
+        rows = []
+        for meter_id, meta in meters.items():
+            cur.execute(
+                "SELECT * FROM meter_data WHERE plant=? AND meter_id=? ORDER BY timestamp DESC LIMIT 1",
+                [str(plant), int(meter_id)]
+            )
+            row = cur.fetchone()
+            if not row:
+                continue
+            normalized = dict(row)
+            normalized["meter_name"] = meta.get("name", normalized.get("meter_name"))
+            normalized["meter_type"] = meta.get("type", normalized.get("meter_type"))
+            rows.append(normalized)
+        rows.sort(key=lambda r: (r.get("meter_name") or ""))
+        conn.close()
+        return rows
     else:
         query = "SELECT * FROM meter_data WHERE plant=? AND meter_id=? ORDER BY timestamp DESC LIMIT 1"
         try:
@@ -509,9 +625,9 @@ def energy_summary():
         return jsonify({"error": "Meter not found"}), 404
 
     meter_type = meter_config.get("type", "submeter")
-    value_column = "kw_total" if meter_type == "incomer" else "kwh"
-    unit = "kW" if meter_type == "incomer" else "kWh"
-    metric_name = "Cumulative kW" if meter_type == "incomer" else "Energy Consumption"
+    value_column = "kwh"
+    unit = "kWh"
+    metric_name = "Energy Consumption"
 
     start_row = fetch_latest_value_at_or_before(cur, plant, int(meter), from_dt, value_column)
     end_row = fetch_latest_value_at_or_before(cur, plant, int(meter), to_dt, value_column)
@@ -696,6 +812,29 @@ def incomer_shift_summary():
         windows = [w for w in windows if w[2].startswith(selected_shift)]
 
     series = []
+    # Add kWh consumption shift series for incomer as well.
+    kwh_day_buckets = {}
+    for window_start, window_end, _shift_name in windows:
+        w_start_row, w_end_row = fetch_value_bounds_in_window(cur, plant, int(meter), window_start, window_end, "kwh")
+        if not w_start_row or not w_end_row:
+            continue
+        cons = round(max(0, w_end_row["val"] - w_start_row["val"]), 2)
+        day_key = window_start.strftime("%Y-%m-%d")
+        kwh_day_buckets[day_key] = kwh_day_buckets.get(day_key, 0) + cons
+
+    kwh_bars = []
+    for day_key in sorted(kwh_day_buckets.keys()):
+        kwh_bars.append({
+            "label": day_key,
+            "value": round(kwh_day_buckets[day_key], 2)
+        })
+    if kwh_bars:
+        series.append({
+            "label": "Energy Consumption",
+            "unit": "kWh",
+            "bars": kwh_bars
+        })
+
     for label, column, unit in parameter_defs:
         day_buckets = {}
         day_counts = {}

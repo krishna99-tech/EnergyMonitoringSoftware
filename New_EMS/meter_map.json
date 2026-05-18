@@ -1,10 +1,10 @@
 {
   "Automotive": {
-    "2": {
+    "1": {
       "name": "Main Incomer",
       "type": "incomer"
     },
-    "1": {
+    "2": {
       "name": "Cutting",
       "type": "submeter"
     },
@@ -30,6 +30,46 @@
     },
     "8": {
       "name": "Utilities",
+      "type": "submeter"
+    },
+    "9": {
+      "name": "Office",
+      "type": "submeter"
+    },
+    "10": {
+      "name": "Warehouse",
+      "type": "submeter"
+    },
+    "11": {
+      "name": "R&D",
+      "type": "submeter"
+    },
+    "12": {
+      "name": "Testing",
+      "type": "submeter"
+    },
+    "13": {
+      "name": "Packaging",
+      "type": "submeter"
+    },
+    "14": {
+      "name": "Shipping",
+      "type": "submeter"
+    },
+    "15": {
+      "name": "Maintenance",
+      "type": "submeter"
+    },
+    "16": {
+      "name": "Cafeteria",
+      "type": "submeter"
+    },
+    "17": {
+      "name": "Security",
+      "type": "submeter"
+    },
+    "18": {
+      "name": "HVAC",
       "type": "submeter"
     }
   },

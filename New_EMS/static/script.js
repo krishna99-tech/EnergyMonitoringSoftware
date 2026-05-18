@@ -18,6 +18,7 @@ const submitFiltersBtn = document.getElementById("submitFiltersBtn");
 const shiftAnalysisToggle = document.getElementById("shiftAnalysisToggle");
 const barGraphToggle = document.getElementById("barGraphToggle");
 const shiftDisabledNote = document.getElementById("shiftDisabledNote");
+const floatingHomeBtn = document.getElementById("floatingHomeBtn");
 const moonIcon = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
 const sunIcon = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="4.22" x2="19.78" y2="5.64"></line>';
 
@@ -52,6 +53,23 @@ let meterMetaById = {};
 let liveEventSource = null;
 let pendingStreamRefreshTimer = null;
 let streamRefreshInProgress = false;
+let lastVisualSignature = "";
+
+function buildVisualSignature(payload) {
+    if (!payload) return "";
+    const sanitizeRow = (row) => {
+        if (!row) return row;
+        const copy = { ...row };
+        delete copy.id;
+        delete copy.timestamp;
+        return copy;
+    };
+
+    if (Array.isArray(payload)) {
+        return JSON.stringify(payload.map(sanitizeRow));
+    }
+    return JSON.stringify(sanitizeRow(payload));
+}
 
 function hexToRgba(hex, alpha) {
     const safeHex = (hex || "").replace("#", "");
@@ -204,6 +222,11 @@ function scheduleRefreshFromStream() {
         streamRefreshInProgress = true;
         try {
             if (!plantSelect.value || !meterSelect.value) return;
+            const selectedMeta = meterMetaById[meterSelect.value];
+            if (!shiftAnalysisToggle.checked && meterSelect.value !== "all" && selectedMeta && selectedMeta.type === "submeter") {
+                // Single submeter card is yesterday snapshot mode (non-live).
+                return;
+            }
             if (shiftAnalysisToggle.checked && !shiftSelect.disabled) {
                 await loadData();
             } else {
@@ -217,6 +240,71 @@ function scheduleRefreshFromStream() {
     }, 300);
 }
 
+function getIncomerParams(data) {
+    return [
+        ["Line Voltage", data.line_voltage ?? data.volt, "V"],
+        ["Line-to-Line Voltage", data.line_to_line_voltage ?? data.volt, "V"],
+        ["Average Voltage", data.avg_voltage ?? data.volt, "V"],
+        ["Voltage Unbalance", data.voltage_unbalance, "%"],
+        ["Line Current", data.line_current ?? data.curr, "A"],
+        ["Phase-wise Current L1", data.current_l1, "A"],
+        ["Phase-wise Current L2", data.current_l2, "A"],
+        ["Phase-wise Current L3", data.current_l3, "A"],
+        ["Average Current", data.avg_current ?? data.curr, "A"],
+        ["Neutral Line Current", data.neutral_line_current, "A"],
+        ["Active Power kW L1", data.kw_l1, "kW"],
+        ["Active Power kW L2", data.kw_l2, "kW"],
+        ["Active Power kW L3", data.kw_l3, "kW"],
+        ["Cumulative kW", data.kw_total ?? data.kw, "kW"],
+        ["Apparent Power kVA L1", data.kva_l1, "kVA"],
+        ["Apparent Power kVA L2", data.kva_l2, "kVA"],
+        ["Apparent Power kVA L3", data.kva_l3, "kVA"],
+        ["Cumulative kVA", data.kva_total ?? data.kva, "kVA"],
+        ["Power Factor", data.pf, ""],
+        ["Frequency", data.freq, "Hz"],
+        ["kVA Maximum Demand", data.kva_max_demand, "kVA"]
+    ];
+}
+
+function applyLiveUpdateWithoutRerender(row) {
+    if (!row || barGraphToggle.checked || shiftAnalysisToggle.checked || meterSelect.value === "all") return false;
+    const selectedMeta = meterMetaById[meterSelect.value];
+    if (selectedMeta && selectedMeta.type === "submeter") {
+        // Single submeter card is yesterday snapshot mode; do not live-update it.
+        return false;
+    }
+    const cardContents = cardsContainer.querySelectorAll(".card-content");
+    if (!cardContents.length) return false;
+
+    const byTitle = {};
+    cardContents.forEach(card => {
+        const t = card.querySelector(".title")?.textContent?.trim();
+        if (t) byTitle[t] = card;
+    });
+
+    if (row.meter_type === "submeter") {
+        const energyCard = byTitle["Energy Consumption"] || byTitle["Energy"];
+        if (!energyCard) return false;
+        const spans = energyCard.querySelectorAll(".plain span");
+        if (spans[0]) spans[0].textContent = `${row.kwh ?? 0}`;
+        if (spans[1]) spans[1].textContent = "kWh";
+    } else if (row.meter_type === "incomer") {
+        getIncomerParams(row).forEach(([label, value, unit]) => {
+            const card = byTitle[label];
+            if (!card) return;
+            const spans = card.querySelectorAll(".plain span");
+            if (spans[0]) spans[0].textContent = `${value ?? 0}`;
+            if (spans[1]) spans[1].textContent = unit;
+        });
+    } else {
+        return false;
+    }
+
+    const timeNode = cardsContainer.querySelector(".last-updated-info p");
+    if (timeNode) timeNode.textContent = `Last Updated: ${row.timestamp || "-"}`;
+    return true;
+}
+
 function setupLiveStream() {
     closeLiveStream();
     const plant = plantSelect.value;
@@ -226,7 +314,16 @@ function setupLiveStream() {
     const streamUrl = `/stream_latest?plant=${encodeURIComponent(plant)}&meter=${encodeURIComponent(meter)}`;
     liveEventSource = new EventSource(streamUrl);
 
-    liveEventSource.addEventListener("latest", () => {
+    liveEventSource.addEventListener("latest", async (event) => {
+        try {
+            const payload = JSON.parse(event.data || "{}");
+            const rows = Array.isArray(payload.rows) ? payload.rows : [];
+            if (rows.length === 1 && applyLiveUpdateWithoutRerender(rows[0])) {
+                return;
+            }
+        } catch (_e) {
+            // Fall back to existing refresh flow
+        }
         scheduleRefreshFromStream();
     });
 
@@ -246,10 +343,40 @@ function setShiftControlsEnabled(enabled) {
     submitFiltersBtn.classList.toggle("disabled-control", !enabled);
 }
 
+function renderLiveOnlyNotice(message) {
+    const notice = document.createElement("div");
+    notice.style.gridColumn = "1 / -1";
+    notice.className = "last-updated-info";
+    notice.innerHTML = `<p>${message}</p>`;
+    cardsContainer.appendChild(notice);
+}
+
 function syncShiftUiForMeter() {
+    const meter = meterSelect.value;
+    if (meter === "all") {
+        shiftAnalysisToggle.checked = false;
+        shiftAnalysisToggle.disabled = true;
+        barGraphToggle.checked = false;
+        barGraphToggle.disabled = true;
+        barGraphToggle.closest(".tick-card")?.classList.add("disabled-control");
+        setShiftControlsEnabled(false);
+        shiftDisabledNote.textContent = "All Devices is live-only. Shift analysis and bar graphs are disabled.";
+        shiftDisabledNote.style.display = "block";
+        return;
+    }
+
     shiftAnalysisToggle.disabled = false;
-    setShiftControlsEnabled(shiftAnalysisToggle.checked);
+    barGraphToggle.disabled = false;
+    barGraphToggle.closest(".tick-card")?.classList.remove("disabled-control");
+    const rangeModeEnabled = shiftAnalysisToggle.checked || barGraphToggle.checked;
+    setShiftControlsEnabled(rangeModeEnabled);
     shiftDisabledNote.style.display = "none";
+}
+
+function syncFloatingHomeBtn() {
+    const landingView = document.getElementById("landingView");
+    const showButton = !!(landingView && landingView.style.display === "none");
+    floatingHomeBtn?.classList.toggle("hidden", !showButton);
 }
 
 // ================= LOAD PLANTS =================
@@ -312,39 +439,43 @@ async function loadMeters(plant){
 
 function getBarChartHTML(title, dataPoints, isFullWidth = false) {
     if (!dataPoints || dataPoints.length === 0) return `<div style="color: var(--text-sub); padding: 20px;">No bar data available.</div>`;
-    
-    const maxVal = Math.max(...dataPoints.map(b => b.value), 0.01);
-    
-    let rowsHtml = dataPoints.map(b => {
-        const percent = (b.value / maxVal) * 100;
-        return `
-        <div class="fallback-chart-row">
-            <div class="fallback-chart-value">${b.value} ${b.unit || ''}</div>
-            <div class="fallback-chart-track">
-                <div class="fallback-chart-fill" style="height: ${percent}%;"></div>
-            </div>
-            <div class="fallback-chart-label">${b.label}</div>
-        </div>`;
-    }).join('');
 
-    const yAxisHtml = `
-    <div style="display: flex; flex-direction: column; justify-content: space-between; height: 180px; margin-bottom: 26px; padding-right: 8px; font-size: 11px; color: var(--text-sub); text-align: right;">
-        <span>${maxVal >= 10 ? Math.round(maxVal) : maxVal.toFixed(1)}</span>
-        <span>${maxVal >= 10 ? Math.round(maxVal * 0.75) : (maxVal * 0.75).toFixed(1)}</span>
-        <span>${maxVal >= 10 ? Math.round(maxVal * 0.5) : (maxVal * 0.5).toFixed(1)}</span>
-        <span>${maxVal >= 10 ? Math.round(maxVal * 0.25) : (maxVal * 0.25).toFixed(1)}</span>
-        <span>0</span>
-    </div>`;
+    const safePoints = dataPoints.map(p => ({
+        label: p.label,
+        value: Number(p.value) || 0,
+        unit: p.unit || ""
+    }));
+    const rawMax = Math.max(...safePoints.map(b => b.value), 0);
+    const axisMax = rawMax <= 0 ? 1 : rawMax * 1.1;
+    const ticks = [1, 0.75, 0.5, 0.25, 0];
+    const formatNum = n => (n >= 100 ? Math.round(n).toString() : n.toFixed(2).replace(/\.00$/, ""));
+    const yAxisHtml = ticks.map(t => `<span>${formatNum(axisMax * t)}</span>`).join("");
+    const barsHtml = safePoints.map(b => {
+        const percent = Math.max(0, Math.min(100, (b.value / axisMax) * 100));
+        return `
+        <div class="industrial-bar-wrap">
+            <div class="industrial-bar-value">${formatNum(b.value)} ${b.unit}</div>
+            <div class="industrial-bar-track">
+                <div class="industrial-bar-fill" style="height:${percent}%"></div>
+            </div>
+            <div class="industrial-bar-label" title="${b.label}">${b.label}</div>
+        </div>`;
+    }).join("");
 
     const containerStyle = isFullWidth ? 'style="grid-column: 1 / -1; width: 100%;"' : '';
 
     return `
     <div class="graph-container" ${containerStyle}>
         <h4 class="graph-title">${title}</h4>
-        <div style="display: flex; align-items: flex-end; width: 100%; overflow-x: auto;">
-            ${yAxisHtml}
-            <div class="fallback-chart" style="flex: 1; margin-top: 0; min-height: 240px; border-left: 2px solid rgba(148, 163, 184, 0.5); border-bottom: 2px solid rgba(148, 163, 184, 0.5);">
-                ${rowsHtml}
+        <div class="industrial-chart-shell">
+            <div class="industrial-y-axis">
+                ${yAxisHtml}
+            </div>
+            <div class="industrial-plot-area">
+                <div class="industrial-grid-lines"></div>
+                <div class="industrial-bars">
+                    ${barsHtml}
+                </div>
             </div>
         </div>
     </div>`;
@@ -367,29 +498,7 @@ function createCards(data){
     // Incomer meter
     if(data.meter_type === "incomer"){
 
-        const params = [
-            ["Line Voltage", data.line_voltage ?? data.volt, "V"],
-            ["Line-to-Line Voltage", data.line_to_line_voltage ?? data.volt, "V"],
-            ["Average Voltage", data.avg_voltage ?? data.volt, "V"],
-            ["Voltage Unbalance", data.voltage_unbalance, "%"],
-            ["Line Current", data.line_current ?? data.curr, "A"],
-            ["Phase-wise Current L1", data.current_l1, "A"],
-            ["Phase-wise Current L2", data.current_l2, "A"],
-            ["Phase-wise Current L3", data.current_l3, "A"],
-            ["Average Current", data.avg_current ?? data.curr, "A"],
-            ["Neutral Line Current", data.neutral_line_current, "A"],
-            ["Active Power kW L1", data.kw_l1, "kW"],
-            ["Active Power kW L2", data.kw_l2, "kW"],
-            ["Active Power kW L3", data.kw_l3, "kW"],
-            ["Cumulative kW", data.kw_total ?? data.kw, "kW"],
-            ["Apparent Power kVA L1", data.kva_l1, "kVA"],
-            ["Apparent Power kVA L2", data.kva_l2, "kVA"],
-            ["Apparent Power kVA L3", data.kva_l3, "kVA"],
-            ["Cumulative kVA", data.kva_total ?? data.kva, "kVA"],
-            ["Power Factor", data.pf, ""],
-            ["Frequency", data.freq, "Hz"],
-            ["kVA Maximum Demand", data.kva_max_demand, "kVA"]
-        ];
+        const params = getIncomerParams(data);
 
         if (barGraphToggle.checked) {
             params.forEach(p => {
@@ -424,12 +533,21 @@ function renderEnergySummaryCard(summary) {
     const rangeLabel = `${summary.from_dt || "-"} to ${summary.to_dt || "-"}`;
 
     cardsContainer.innerHTML = "";
-    if (barGraphToggle.checked && summary.bars && summary.bars.length > 0) {
-        const dataPoints = summary.bars.map(b => ({
-            label: b.label,
-            value: b.consumption,
-            unit: valueUnit
-        }));
+    if (barGraphToggle.checked) {
+        let dataPoints = [];
+        if (summary.bars && summary.bars.length > 0) {
+            dataPoints = summary.bars.map(b => ({
+                label: b.label,
+                value: b.consumption,
+                unit: valueUnit
+            }));
+        } else {
+            dataPoints = [{
+                label: "Selected Range",
+                value: selectedTotal ?? 0,
+                unit: valueUnit
+            }];
+        }
         const title = `${metricName} - ${summary.selected_shift === 'all' ? 'All Shifts' : summary.selected_shift}`;
         cardsContainer.insertAdjacentHTML('beforeend', getBarChartHTML(title, dataPoints, true));
     } else {
@@ -501,6 +619,7 @@ function renderIncomerShiftGraphs(summary) {
 function createCardsForAll(dataArray){
 
     cardsContainer.innerHTML = "";
+    renderLiveOnlyNotice("All Devices data is LIVE. Shift Analysis and Bar Graphs are blocked for this view.");
 
     dataArray.forEach(d => {
 
@@ -550,7 +669,10 @@ function createCardsForAll(dataArray){
                 });
             } else {
                 params.forEach(p => {
-                    cardGrid.insertAdjacentHTML('beforeend', getCardHTML(p[0], p[1], p[2], d.status, false, d.meter_name));
+                    cardGrid.insertAdjacentHTML('beforeend', getCardHTML(p[0], p[1], p[2], d.status, false, d.meter_name, {
+                        btnText: d.status === "OK" ? "Device Online" : "Check Device",
+                        titleLabel: `${d.meter_name} - ${d.status === "OK" ? "Device Online" : "Check Device"}`
+                    }));
                 });
             }
         }
@@ -561,7 +683,10 @@ function createCardsForAll(dataArray){
                 const dataPoints = [{label: "Current Energy", value: d.kwh ?? 0, unit: "kWh"}];
                 cardGrid.insertAdjacentHTML('beforeend', getBarChartHTML("Energy Consumption", dataPoints));
             } else {
-                cardGrid.insertAdjacentHTML('beforeend', getCardHTML("Energy", d.kwh, "kWh", d.status, true, d.meter_name));
+                cardGrid.insertAdjacentHTML('beforeend', getCardHTML("Energy", d.kwh, "kWh", d.status, true, d.meter_name, {
+                    btnText: d.status === "OK" ? "Device Online" : "Check Device",
+                    titleLabel: `${d.meter_name} - ${d.status === "OK" ? "Device Online" : "Check Device"}`
+                }));
             }
         }
 
@@ -656,6 +781,7 @@ async function loadData(){
 async function loadBaseCardsOnMeterSelection() {
     const plant = plantSelect.value;
     const meter = meterSelect.value;
+    const selectedMeta = meterMetaById[meter];
     if (!plant || !meter) {
         cardsContainer.innerHTML = "";
         return;
@@ -668,7 +794,21 @@ async function loadBaseCardsOnMeterSelection() {
     if (meter === "all") {
         const res = await fetch(`/latest?plant=${plant}&meter=all`);
         const allData = await res.json();
-        const filteredData = allData.filter(d => d.meter_name !== "Main Incomer");
+        const filteredData = allData
+            .map(d => {
+                const meterIdKey = String(d.meter_id ?? "");
+                const currentMeta = meterMetaById[meterIdKey];
+                if (!currentMeta || currentMeta.type !== "submeter") return null;
+                return {
+                    ...d,
+                    meter_name: currentMeta.name,
+                    meter_type: currentMeta.type
+                };
+            })
+            .filter(Boolean);
+        const visualSig = buildVisualSignature(filteredData);
+        if (visualSig === lastVisualSignature) return;
+        lastVisualSignature = visualSig;
         createCardsForAll(filteredData);
         return;
     }
@@ -676,12 +816,11 @@ async function loadBaseCardsOnMeterSelection() {
     const res = await fetch(`/latest?plant=${plant}&meter=${meter}`);
     const data = await res.json();
     if (data.length > 0) {
-        if (data[0].meter_type === "submeter") {
+        if (selectedMeta && selectedMeta.type === "submeter") {
             const meterName = meterSelect.options[meterSelect.selectedIndex]?.text || "Meter";
-            cardsContainer.innerHTML = "";
             const yesterdayRes = await fetch(`/energy_summary?plant=${encodeURIComponent(plant)}&meter=${encodeURIComponent(meter)}&mode=shiftwise&shift=all`);
             const yesterdaySummary = await yesterdayRes.json();
-            const yVal = yesterdaySummary.yesterday_total_kwh ?? data[0].kwh ?? 0;
+            const yVal = yesterdaySummary.yesterday_total_kwh ?? 0;
             const baseDateRaw = (yesterdaySummary.from_dt || "").slice(0, 10);
             let baseDate = "-";
             if (baseDateRaw) {
@@ -694,6 +833,10 @@ async function loadBaseCardsOnMeterSelection() {
                     });
                 }
             }
+            const visualSig = JSON.stringify({ meter, yVal, baseDate, status: data[0].status, meterName });
+            if (visualSig === lastVisualSignature) return;
+            lastVisualSignature = visualSig;
+            cardsContainer.innerHTML = "";
             cardsContainer.insertAdjacentHTML(
                 "beforeend",
                 `<div style="grid-column:1 / -1; color: var(--text-sub); font-size: 13px; margin: 0 0 8px 4px;">
@@ -706,10 +849,14 @@ async function loadBaseCardsOnMeterSelection() {
             } else {
                 cardsContainer.insertAdjacentHTML("beforeend", getCardHTML("Yesterday Total Consumption", yVal, "kWh", data[0].status || "OK", true, meterName));
             }
-        } else {
-            createCards(data[0]);
+            return;
         }
+        const visualSig = buildVisualSignature(data[0]);
+        if (visualSig === lastVisualSignature) return;
+        lastVisualSignature = visualSig;
+        createCards(data[0]);
     } else {
+        lastVisualSignature = "";
         cardsContainer.innerHTML = `<div style="color: var(--text-sub); padding: 20px;">No data recorded yet for this meter.</div>`;
     }
 }
@@ -730,10 +877,10 @@ function createSummaryCardsForAll(summaries) {
             }));
             cardGrid.insertAdjacentHTML("beforeend", getBarChartHTML("Energy Consumption", dataPoints, true));
         } else {
-            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Energy", summary.yesterday_total_kwh ?? 0, "kWh", "OK", true, summary.meter_name));
-            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift Start", summary.current_shift_start_kwh ?? 0, "kWh", "OK", false, summary.meter_name));
-            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift End", summary.current_shift_end_kwh ?? 0, "kWh", "OK", false, summary.meter_name));
-            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift Consumption", summary.current_shift_consumption_kwh ?? 0, "kWh", "OK", false, summary.meter_name));
+            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Energy", summary.yesterday_total_kwh ?? 0, "kWh", "OK", true, summary.meter_name, { btnText: "Device Online", titleLabel: `${summary.meter_name} - Device Online` }));
+            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift Start", summary.current_shift_start_kwh ?? 0, "kWh", "OK", false, summary.meter_name, { btnText: "Device Online", titleLabel: `${summary.meter_name} - Device Online` }));
+            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift End", summary.current_shift_end_kwh ?? 0, "kWh", "OK", false, summary.meter_name, { btnText: "Device Online", titleLabel: `${summary.meter_name} - Device Online` }));
+            cardGrid.insertAdjacentHTML("beforeend", getCardHTML("Shift Consumption", summary.current_shift_consumption_kwh ?? 0, "kWh", "OK", false, summary.meter_name, { btnText: "Device Online", titleLabel: `${summary.meter_name} - Device Online` }));
         }
         meterDiv.appendChild(cardGrid);
         cardsContainer.appendChild(meterDiv);
@@ -763,21 +910,30 @@ plantSelect.addEventListener("change", async ()=>{
     syncShiftUiForMeter();
 
     cardsContainer.innerHTML = "";
+    lastVisualSignature = "";
 
     document.getElementById("liveStatus").style.display = "none";
     setupLiveStream();
+    syncFloatingHomeBtn();
 });
 
 meterSelect.addEventListener("change", loadBaseCardsOnMeterSelection);
 meterSelect.addEventListener("change", syncShiftUiForMeter);
 meterSelect.addEventListener("change", setupLiveStream);
+meterSelect.addEventListener("change", () => { lastVisualSignature = ""; });
 submitFiltersBtn.addEventListener("click", loadData);
 shiftAnalysisToggle.addEventListener("change", () => {
     syncShiftUiForMeter();
-    scheduleRefreshFromStream();
+    lastVisualSignature = "";
+    if ((shiftAnalysisToggle.checked || barGraphToggle.checked) && !shiftSelect.disabled) {
+        loadData();
+    } else {
+        loadBaseCardsOnMeterSelection();
+    }
 });
 barGraphToggle.addEventListener("change", () => {
-    if (meterSelect.value && !shiftSelect.disabled && fromDateTime.value && toDateTime.value) {
+    syncShiftUiForMeter();
+    if (meterSelect.value && (shiftAnalysisToggle.checked || barGraphToggle.checked) && !shiftSelect.disabled && fromDateTime.value && toDateTime.value) {
         loadData();
     } else {
         loadBaseCardsOnMeterSelection();
@@ -787,6 +943,30 @@ plantSelect.addEventListener("change", () => updateInsightCardsMeta({ barCount: 
 shiftSelect.addEventListener("change", () => updateInsightCardsMeta({ barCount: 0 }));
 fromDateTime.addEventListener("change", () => updateInsightCardsMeta({ barCount: 0 }));
 toDateTime.addEventListener("change", () => updateInsightCardsMeta({ barCount: 0 }));
+
+floatingHomeBtn?.addEventListener("click", () => {
+    const landingView = document.getElementById("landingView");
+    const dashboardView = document.getElementById("dashboardView");
+
+    closeLiveStream();
+    plantSelect.value = "";
+    meterSelect.innerHTML = `<option value="">Select Meter</option>`;
+    cardsContainer.innerHTML = "";
+    lastVisualSignature = "";
+
+    dashboardTitle.innerText = "Energy Monitoring System";
+    plantSelect.style.color = "inherit";
+    applyThemeState();
+
+    if (landingView) landingView.style.display = "block";
+    if (dashboardView) dashboardView.style.display = "none";
+    document.getElementById("liveStatus").style.display = "none";
+
+    shiftAnalysisToggle.checked = false;
+    barGraphToggle.checked = false;
+    syncShiftUiForMeter();
+    syncFloatingHomeBtn();
+});
 
 // ================= SCROLL LISTENER =================
 window.addEventListener("scroll", () => {
@@ -830,5 +1010,7 @@ if (savedTheme === "light") {
 
 applyThemeState();
 updateInsightCardsMeta({ barCount: 0 });
+shiftAnalysisToggle.checked = false;
 syncShiftUiForMeter();
+syncFloatingHomeBtn();
 window.addEventListener("beforeunload", closeLiveStream);
