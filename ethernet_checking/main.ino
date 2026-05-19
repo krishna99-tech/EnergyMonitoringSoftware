@@ -13,14 +13,14 @@
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 
 // ----------- Static IP -----------
-IPAddress ip(192, 168, 0, 177);
-IPAddress gateway(192, 168, 0, 1);
+IPAddress ip(192, 168, 0, 229);
+IPAddress gateway(192, 168, 0, 254);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress dns(8, 8, 8, 8);
 
 // ----------- UDP Target -----------
-IPAddress remoteIP(192, 168, 0, 179); // 🔴 Change to your PC/server IP
-unsigned int remotePort = 6503;
+IPAddress remoteIP(192, 168, 0, 41); // 🔴 Change to your PC/server IP
+unsigned int remotePort = 10011;
 
 EthernetUDP Udp;
 

@@ -1,0 +1,1 @@
+CreateObject("WScript.Shell").Run "cmd /c run_loop.bat", 0, False

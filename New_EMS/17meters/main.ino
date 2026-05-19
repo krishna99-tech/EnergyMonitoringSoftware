@@ -22,13 +22,13 @@
 // ================= NETWORK =================
 byte mac[] = {0xDE,0xAD,0xBE,0xEF,0xFE,0xED};
 
-IPAddress ip(192,168,0,177);
-IPAddress gateway(192,168,0,1);
+IPAddress ip(192,168,0,229);
+IPAddress gateway(192,168,0,254);
 IPAddress subnet(255,255,255,0);
 IPAddress dns(8,8,8,8);
 
-IPAddress remoteIP(192,168,0,179);
-unsigned int remotePort = 6503;
+IPAddress remoteIP(192,168,0,41);
+unsigned int remotePort = 10011;
 
 EthernetUDP Udp;
 ModbusMaster node;
@@ -36,7 +36,7 @@ ModbusMaster node;
 // ======================================================
 // TOTAL METERS
 // ======================================================
-#define TOTAL_METERS 17
+#define TOTAL_METERS 13
 
 // ======================================================
 // METER TYPES
@@ -58,7 +58,7 @@ uint16_t SCH_KWH_REG = 2699;
 // Datasheet: 40167
 // Modbus libraries usually use offset without 40001
 // 40167 -> 166
-uint16_t ELM_KWH_REG = 166;
+uint16_t ELM_KWH_REG = 158;
 
 // ======================================================
 // CONFIGURE YOUR METERS
@@ -71,26 +71,21 @@ struct MeterConfig {
 };
 
 MeterConfig meters[TOTAL_METERS] = {
-
-  {1, ELMEASURE},
+  
+  {21, ELMEASURE},
   {2, SCHNEIDER},
-  {3, SCHNEIDER},
   {4, SCHNEIDER},
-  {5, SCHNEIDER},
-  {6, SCHNEIDER},
   {7, SCHNEIDER},
   {8, SCHNEIDER},
-
-  {9, ELMEASURE},
-  {10, ELMEASURE},
-  {11, ELMEASURE},
-  {12, ELMEASURE},
-  {13, ELMEASURE},
-  {14, ELMEASURE},
-  {15, ELMEASURE},
-  {16, ELMEASURE},
-  {17, ELMEASURE}
-};
+  {9, SCHNEIDER},
+  {10, SCHNEIDER},
+  {13, SCHNEIDER},
+  {15, SCHNEIDER},
+  {16, SCHNEIDER},
+  {17, SCHNEIDER},
+  {19, SCHNEIDER},
+  {20, SCHNEIDER}
+}; 
 
 // ================= RS485 CONTROL =================
 void preTransmission() {
